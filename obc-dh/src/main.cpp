@@ -41,9 +41,204 @@
 HardwareSerial SerialPLD(2); // UART - RPi zero W
 SPIClass SPIh(HSPI); // HSPI - SD card
 
+// Cada bit representa um subsistema que terminou sua inicialização.
+
+#define EPS_READY       (1 << 0)
+#define UART_READY      (1 << 1)
+#define I2C_READY       (1 << 2)
+#define HSPI_READY      (1 << 3)
+#define VSPI_READY      (1 << 4)
+
+#define INIT_ERROR      (1 << 5)
+
+#define MISSION_READY   (1 << 6)
+
+
+// Event Group
+EventGroupHandle_t systemEvents;
+
+
+// TASK - INICIALIZAÇÃO DO EPS
+void TaskEPS(void *parameter) {
+
+  Serial.println("[BOOT] Inicializando EPS...");
+
+  if (EPSinit()) {
+
+    Serial.println("[OK] EPS inicializado");
+
+    xEventGroupSetBits(
+      systemEvents,
+      EPS_READY
+    );
+
+  } else {
+
+    Serial.println("[ERRO] Falha na inicialização do EPS");
+
+    xEventGroupSetBits(
+      systemEvents,
+      INIT_ERROR
+    );
+  }
+  vTaskDelete(NULL);
+}
+
+// TASK - INICIALIZAÇÃO DAS COMUNICAÇÕES
+
+void TaskCommunication(void *parameter) {
+
+  Serial.println("[BOOT] Inicializando interfaces de comunicação...");
+ SerialPLD.begin(
+    115200,
+    SERIAL_8N1,
+    PIN_RXpld,
+    PIN_TXpld
+  );
+
+  Serial.println("[OK] UART inicializada");
+
+  xEventGroupSetBits(
+    systemEvents,
+    UART_READY
+  );
+ 
+// I2C - TC, EPS e ADCS
+
+Wire.begin(
+    PIN_SDAitc,
+    PIN_SCLitc,
+    400000
+  );
+
+  Serial.println("[OK] I2C inicializado");
+
+  xEventGroupSetBits(
+    systemEvents,
+    I2C_READY
+  );
+ vTaskDelete(NULL);
+}
+
+
+// TASK - INICIALIZAÇÃO DAS INTERFACES SPI
+
+void TaskSPI(void *parameter) {
+
+  Serial.println("[BOOT] Inicializando interfaces SPI...");
+
+
+ // HSPI - SD Card
+
+SPIh.begin(
+    PIN_SCKh,
+    PIN_MISOh,
+    PIN_MOSIh,
+    PIN_CSh
+  );
+
+  Serial.println("[OK] HSPI inicializado");
+
+  xEventGroupSetBits(
+    systemEvents,
+    HSPI_READY
+  );
+
+  // VSPI - LoRa SX1276
+ SPI.begin(
+    PIN_SCKv,
+    PIN_MISOv,
+    PIN_MOSIv,
+    PIN_CSv
+  );
+
+  Serial.println("[OK] VSPI inicializado");
+
+  xEventGroupSetBits(
+    systemEvents,
+    VSPI_READY
+  );
+ vTaskDelete(NULL);
+}
+
+// TASK - GERENCIADOR DE BOOT
+void TaskBootManager(void *parameter) {
+
+  Serial.println("[BOOT] Aguardando inicialização dos subsistemas...");
+const EventBits_t requiredBits =
+    EPS_READY |
+    UART_READY |
+    I2C_READY |
+    HSPI_READY |
+    VSPI_READY;
+  while (1) {
+
+EventBits_t bits = xEventGroupWaitBits(
+
+      systemEvents,
+      requiredBits | INIT_ERROR,
+      pdFALSE,
+      pdFALSE,
+      portMAX_DELAY
+    );
+ 
+  // VERIFICA SE OCORREU ERRO
+if (bits & INIT_ERROR) {
+
+      Serial.println();
+      Serial.println();
+      Serial.println("   FALHA NA INICIALIZAÇÃO");
+      Serial.println();
+      Serial.println();
+
+ // LED piscando indica falha crítica
+
+      while (1) {
+
+        digitalWrite(
+          LED_BUILTIN,
+          !digitalRead(LED_BUILTIN)
+        );
+
+        vTaskDelay(
+          pdMS_TO_TICKS(500)
+        );
+      }
+    }
+
+ // VERIFICA SE TODOS OS SUBSISTEMAS ESTÃO PRONTOS
+if ((bits & requiredBits) == requiredBits) {
+
+      Serial.println();
+      Serial.println();
+      Serial.println("          OBC FCP-01");
+      Serial.println("      PRONTO PARA MISSÃO");
+      Serial.println();
+      Serial.println();
+
+// Marca o sistema como pronto para missão
+      xEventGroupSetBits(
+        systemEvents,
+        MISSION_READY
+      );
+
+      break;
+    }
+  }
+
+  // Boot concluído
+  vTaskDelete(NULL);
+}
+
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, LOW); // Led de inicialização do ESP
+  
+  pinMode(PIN_BURN, OUTPUT);
+  digitalWrite(PIN_BURN, LOW); // Gatilho do Burn Wire desligado
+
+  pinMode(PIN_EN, OUTPUT);
+  digitalWrite(PIN_EN, LOW); // Driver do motor desligado
 
   Serial.begin(115200);
 
@@ -55,29 +250,69 @@ void setup() {
   }
   
   digitalWrite(LED_BUILTIN, HIGH);
-  Serial.println("\nOBC FCP-01 Inicializando");
   
-  if (EPSinit()) {
-    Serial.println("[OK] EPS inicializado com sucesso");
-  } else {
-    Serial.println("[ERRO] Falha na inicialização do EPS");
+    
+   Serial.println("       OBC FCP-01 BOOT");
+   
+  systemEvents = xEventGroupCreate();
+
+  // Falha crítica
+if (systemEvents == NULL) {
+    Serial.println(
+      "[FATAL] Falha ao criar Event Group!"
+    );
+    while (1) {
+
+      digitalWrite(
+        LED_BUILTIN,
+        !digitalRead(LED_BUILTIN)
+      );
+
+      delay(200);
+    }
   }
+Serial.println(
+    "[BOOT] Event Group criado"
+  );
+   xTaskCreate(
+    TaskEPS,
+    "TaskEPS",
+    4096,
+    NULL,
+    2,
+    NULL
+  );
+  xTaskCreate(
+    TaskCommunication,
+    "TaskCommunication",
+    4096,
+    NULL,
+    2,
+    NULL
+  );
+   xTaskCreate(
+    TaskSPI,
+    "TaskSPI",
+    4096,
+    NULL,
+    2,
+    NULL
+  );
+   xTaskCreate(
+    TaskBootManager,
+    "TaskBootManager",
+    4096,
+    NULL,
+    3,
+    NULL
+  );
 
-  pinMode(PIN_BURN, OUTPUT);
-  digitalWrite(PIN_BURN, LOW); // Gatilho do Burn Wire desligado
-
-  pinMode(PIN_EN, OUTPUT);
-  digitalWrite(PIN_EN, LOW); // Driver do motor desligado
-
-  // Inicializa UART2
-    SerialPLD.begin(115200, SERIAL_8N1, PIN_RXpld, PIN_TXpld); // Inicializa UART2 com baudrate de 115200, 8 bits de dados, sem paridade e 1 bit de parada
-    Wire.begin(PIN_SDAitc, PIN_SCLitc, 400000); // Inicializa I2C com frequência de 400kHz
-    SPIh.begin(PIN_SCKh, PIN_MISOh, PIN_MOSIh, PIN_CSh); // Inicializa HSPI com pinos definidos
-    SPI.begin(PIN_SCKv, PIN_MISOv, PIN_MOSIv, PIN_CSv); // Inicializa VSPI com pinos definidos
-    Serial.println("Interfaces de comunicação inicializadas");
-
-
+  Serial.println(
+    "[BOOT] Tasks de inicialização criadas"
+  );
 }
 void loop() {
-  // Coloque aqui o código principal do seu programa
+ vTaskDelay(
+    pdMS_TO_TICKS(1000)
+  );
 }
