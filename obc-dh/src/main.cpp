@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include <HardwareSerial.h>
+#include "../eps-tc/src/eps.h"
 
 // Pinagem
 #define LED_BUILTIN 2
@@ -56,6 +57,12 @@ void setup() {
   digitalWrite(LED_BUILTIN, HIGH);
   Serial.println("\nOBC FCP-01 Inicializando");
   
+  if (EPSinit()) {
+    Serial.println("[OK] EPS inicializado com sucesso");
+  } else {
+    Serial.println("[ERRO] Falha na inicialização do EPS");
+  }
+
   pinMode(PIN_BURN, OUTPUT);
   digitalWrite(PIN_BURN, LOW); // Gatilho do Burn Wire desligado
 
