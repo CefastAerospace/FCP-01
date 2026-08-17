@@ -3,14 +3,19 @@
 #include <SPI.h>
 #include <HardwareSerial.h>
 #include "../eps-tc/src/eps.h"
+#include "esp_heap_caps.h"
+
 // Pinagem
 #define LED_BUILTIN 2
+
 // UART - RPi zero W
 #define PIN_RXpld 16
 #define PIN_TXpld 17
+
 // I2C - TC, EPS e ADCS
 #define PIN_SDAitc 21
 #define PIN_SCLitc 22
+
 // VSPI - LoRa SX1276 TT&C 
 #define PIN_SCKv 18
 #define PIN_MISOv 19
@@ -18,16 +23,19 @@
 #define PIN_CSv 5
 #define PIN_RSTv 14
 #define PIN_DIO0v 4
+
 // HSPI - SD card OBC
 #define PIN_SCKh 15
 #define PIN_MISOh 35 // Input-only
 #define PIN_MOSIh 12
 #define PIN_CSh 13
+
 // PWM - SimpleFOC
 #define PIN_PWMu 25
 #define PIN_PWMv 26
 #define PIN_PWMw 27
 #define PIN_EN 32
+
 // Burn wire - Gatilho
 #define PIN_BURN 33
 
@@ -49,9 +57,10 @@ EventGroupHandle_t systemEvents;
 
 // TASK - INICIALIZAÇÃO DO EPS
 void TaskEPS(void *parameter) { Serial.println("[BOOT] Inicializando EPS...");
-  if (EPSinit()) {
+ if (EPSinit()) {
     Serial.println("[OK] EPS inicializado");
     xEventGroupSetBits(systemEvents, EPS_READY);} 
+  
   else {
     Serial.println("[ERRO] Falha na inicialização do EPS");
     xEventGroupSetBits(systemEvents, INIT_ERROR);}
@@ -78,7 +87,6 @@ void TaskSPI(void *parameter) {
 SPIh.begin(PIN_SCKh, PIN_MISOh, PIN_MOSIh, PIN_CSh);
   Serial.println("[OK] HSPI (SD Card) inicializado");
   xEventGroupSetBits(systemEvents, HSPI_READY);
-
   // VSPI - LoRa SX1276
  SPI.begin(PIN_SCKv, PIN_MISOv, PIN_MOSIv, PIN_CSv);
   Serial.println("[OK] VSPI (LoRa SX1276) inicializado");
@@ -100,7 +108,6 @@ EventBits_t bits = xEventGroupWaitBits(systemEvents, requiredBits | INIT_ERROR, 
   // VERIFICA SE OCORREU ERRO
 if (bits & INIT_ERROR) {
       Serial.println();
-      Serial.println();
       Serial.println("   FALHA NA INICIALIZAÇÃO");
       Serial.println();
       Serial.println();
@@ -115,15 +122,15 @@ vTaskDelay(pdMS_TO_TICKS(500));
  // VERIFICA SE TODOS OS SUBSISTEMAS ESTÃO PRONTOS
 if ((bits & requiredBits) == requiredBits) {
       Serial.println();
-      Serial.println();
       Serial.println("          OBC FCP-01");
       Serial.println("      PRONTO PARA MISSÃO");
       Serial.println();
-      Serial.println();
-// Marca o sistema como pronto para missão
+
+  // Marca o sistema como pronto para missão
       xEventGroupSetBits(systemEvents, MISSION_READY);
       break;}
   }
+  
   // Boot concluído
   vTaskDelete(NULL);}
 
@@ -134,7 +141,9 @@ void setup() {
   digitalWrite(PIN_BURN, LOW); // Gatilho do Burn Wire desligado
   pinMode(PIN_EN, OUTPUT);
   digitalWrite(PIN_EN, LOW); // Driver do motor desligado
+  
   Serial.begin(115200);
+  
   unsigned long startWait = millis();
   while (!Serial && (millis() - startWait < 3000))
   {delay(100);
@@ -142,6 +151,7 @@ void setup() {
   digitalWrite(LED_BUILTIN, HIGH);
    Serial.println("       OBC FCP-01 BOOT");
   systemEvents = xEventGroupCreate();
+  
   // Falha crítica
   if (systemEvents == NULL) {
     Serial.println(
