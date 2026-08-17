@@ -145,8 +145,11 @@ void setup() {
   
   Serial.begin(115200);
   
- if (SD_Init())
-    { SD_CreateLog();}
+if (SD_Init())
+{ if (SD_CreateLog())
+    { SD_StartTask();
+    }
+}
  
  unsigned long startWait = millis();
   while (!Serial && (millis() - startWait < 3000))
