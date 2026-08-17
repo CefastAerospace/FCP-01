@@ -3,18 +3,15 @@
 #include <SPI.h>
 #include <SD.h>
 
-// OBJETO SPI DO SD CARD
-
+// SPI
 SPIClass SD_SPI(HSPI);
 
 // VARIÁVEIS INTERNAS
-
-// Indica se o cartão SD foi inicializado corretamente
 static bool sdAvailable = false;
+static QueueHandle_t xQueueLog = NULL;
+static TaskHandle_t xSDTask = NULL;
 
-// FUNÇÃO INTERNA
-
-// Converte o tipo de log para texto
+// CONVERSÃO DO TIPO
 static const char* LogTypeToString(LogType type)
 {
     switch (type)
@@ -37,12 +34,10 @@ static const char* LogTypeToString(LogType type)
 }
 
 // INICIALIZAÇÃO DO SD
-
 bool SD_Init()
 {
     Serial.println("[SD] Inicializando...");
 
-    // Inicializa o barramento HSPI
     SD_SPI.begin(
         PIN_SCKh,
         PIN_MISOh,
@@ -50,15 +45,13 @@ bool SD_Init()
         PIN_CSh
     );
 
-    // Inicializa o cartão SD
     if (!SD.begin(PIN_CSh, SD_SPI, SD_FREQUENCY))
     {
-        Serial.println("[SD] ERRO: falha ao inicializar o cartao!");
+        Serial.println("[SD] ERRO: falha ao inicializar!");
         sdAvailable = false;
         return false;
     }
 
-    // Verifica se existe um cartão
     uint8_t cardType = SD.cardType();
 
     if (cardType == CARD_NONE)
@@ -69,80 +62,51 @@ bool SD_Init()
     }
 
     sdAvailable = true;
-    Serial.println("[SD] Cartao inicializado com sucesso!");
 
-    // Mostra o tipo do cartão
-    Serial.print("[SD] Tipo: ");
+    Serial.println("[SD] Cartao inicializado!");
 
-    switch (cardType)
-    {
-        case CARD_MMC:
-            Serial.println("MMC");
-            break;
-
-        case CARD_SD:
-            Serial.println("SDSC");
-            break;
-
-        case CARD_SDHC:
-            Serial.println("SDHC");
-            break;
-
-        case CARD_UNKNOWN:
-            Serial.println("Desconhecido");
-            break;
-
-        default:
-            Serial.println("Outro");
-            break;
-    }
-
-    // Mostra capacidade
     Serial.print("[SD] Capacidade: ");
     Serial.print(SD_GetCardSizeMB());
     Serial.println(" MB");
 
-    // Mostra espaço disponível
-    Serial.print("[SD] Espaco livre: ");
-    Serial.print(SD_GetFreeSpaceMB());
+    Serial.print("[SD] Espaco usado: ");
+    Serial.print(SD.usedBytes() / (1024 * 1024));
     Serial.println(" MB");
 
     return true;
 }
 
-// CRIAÇÃO DO ARQUIVO DE LOG
+// CRIAÇÃO DO LOG
 
 bool SD_CreateLog()
 {
     if (!sdAvailable)
     {
-        Serial.println("[SD] ERRO: cartao nao esta disponivel!");
+        Serial.println("[SD] Cartao indisponivel!");
         return false;
     }
 
-    // Se o arquivo já existe, não recria
     if (SD.exists(SD_LOG_FILE))
     {
         Serial.println("[SD] MISSION.CSV ja existe.");
         return true;
     }
 
-    // Cria o arquivo
     File file = SD.open(SD_LOG_FILE, FILE_WRITE);
+
     if (!file)
     {
-        Serial.println("[SD] ERRO: nao foi possivel criar MISSION.CSV!");
+        Serial.println("[SD] ERRO ao criar MISSION.CSV!");
         return false;
     }
 
-    // Cabeçalho do CSV
     file.println("DATA,HORA,TIPO,DADOS");
     file.close();
-    Serial.println("[SD] MISSION.CSV criado com sucesso!");
+    Serial.println("[SD] MISSION.CSV criado!");
     return true;
 }
 
-// GRAVAÇÃO DE LOG
+// ESCRITA NO SD
 
 bool SD_Log(
     const char* data,
@@ -153,48 +117,159 @@ bool SD_Log(
 {
     if (!sdAvailable)
     {
-        Serial.println("[SD] ERRO: tentativa de gravar sem SD!");
         return false;
     }
 
-    // Abre o arquivo para adicionar dados no final
     File file = SD.open(SD_LOG_FILE, FILE_APPEND);
 
     if (!file)
     {
-        Serial.println("[SD] ERRO: nao foi possivel abrir MISSION.CSV!");
+        Serial.println("[SD] ERRO ao abrir MISSION.CSV!");
         return false;
     }
 
-    // Data
     file.print(data);
     file.print(",");
 
-    // Hora
     file.print(time);
     file.print(",");
 
-    // Tipo
     file.print(LogTypeToString(type));
     file.print(",");
 
-    // Dados
     file.println(dataPacket);
 
-    // Fecha o arquivo
     file.close();
+
     return true;
 }
 
-// VERIFICAÇÃO DO SD
+// SD TASK
+static void SD_Task(void* parameter)
+{
+    LogPacket packet;
 
+    Serial.println("[SD TASK] Iniciada.");
+
+    while (true)
+    {
+        if (xQueueReceive(
+                xQueueLog,
+                &packet,
+                portMAX_DELAY
+            ) == pdTRUE)
+        {
+            if (!SD_Log(
+                    packet.data,
+                    packet.time,
+                    packet.type,
+                    packet.payload
+                ))
+            {
+                Serial.println(
+                    "[SD TASK] ERRO ao gravar pacote!"
+                );
+            }
+        }
+    }
+}
+
+// CRIAÇÃO DA TASK
+bool SD_StartTask()
+{
+    if (!sdAvailable)
+    {
+        Serial.println(
+            "[SD TASK] SD indisponivel!"
+        );
+
+        return false;
+    }
+
+    if (xQueueLog != NULL)
+    {
+        Serial.println(
+            "[SD TASK] Queue ja existe!"
+        );
+
+        return false;
+    }
+
+    xQueueLog = xQueueCreate(
+        LOG_QUEUE_LENGTH,
+        sizeof(LogPacket)
+    );
+
+    if (xQueueLog == NULL)
+    {
+        Serial.println(
+            "[SD TASK] ERRO ao criar Queue!"
+        );
+
+        return false;
+    }
+
+    BaseType_t result = xTaskCreatePinnedToCore(
+        SD_Task,
+        "SD_Task",
+        4096,
+        NULL,
+        2,
+        &xSDTask,
+        1
+    );
+
+    if (result != pdPASS)
+    {
+        Serial.println(
+            "[SD TASK] ERRO ao criar Task!"
+        );
+
+        vQueueDelete(xQueueLog);
+
+        xQueueLog = NULL;
+
+        return false;
+    }
+
+    Serial.println(
+        "[SD TASK] Task criada com sucesso!"
+    );
+
+    return true;
+}
+
+// ENVIO PARA A QUEUE
+bool SD_SendLog(const LogPacket& packet)
+{
+    if (xQueueLog == NULL)
+    {
+        return false;
+    }
+
+    if (xQueueSend(
+            xQueueLog,
+            &packet,
+            pdMS_TO_TICKS(100)
+        ) != pdTRUE)
+    {
+        Serial.println(
+            "[SD] Queue cheia! Pacote perdido."
+        );
+
+        return false;
+    }
+
+    return true;
+}
+
+// STATUS
 bool SD_IsAvailable()
 {
     return sdAvailable;
 }
 
-// TAMANHO TOTAL DO CARTÃO
-
+// TAMANHO DO CARTÃO
 uint64_t SD_GetCardSizeMB()
 {
     if (!sdAvailable)
@@ -205,8 +280,7 @@ uint64_t SD_GetCardSizeMB()
     return SD.cardSize() / (1024 * 1024);
 }
 
-// ESPAÇO DISPONÍVEL
-
+// ESPAÇO LIVRE
 uint64_t SD_GetFreeSpaceMB()
 {
     if (!sdAvailable)
@@ -214,6 +288,13 @@ uint64_t SD_GetFreeSpaceMB()
         return 0;
     }
 
-    return SD.totalBytes() / (1024 * 1024)
-         - SD.usedBytes() / (1024 * 1024);
+    uint64_t total = SD.totalBytes();
+    uint64_t used = SD.usedBytes();
+
+    if (used >= total)
+    {
+        return 0;
+    }
+
+    return (total - used) / (1024 * 1024);
 }
