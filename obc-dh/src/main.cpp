@@ -4,6 +4,7 @@
 #include <HardwareSerial.h>
 #include "../eps-tc/src/eps.h"
 #include "esp_heap_caps.h"
+#include "sd_logger.h"
 
 // Pinagem
 #define LED_BUILTIN 2
@@ -144,7 +145,10 @@ void setup() {
   
   Serial.begin(115200);
   
-  unsigned long startWait = millis();
+ if (SD_Init())
+    { SD_CreateLog();}
+ 
+ unsigned long startWait = millis();
   while (!Serial && (millis() - startWait < 3000))
   {delay(100);
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));} // Pisca o LED enquanto espera a inicialização da Serial
