@@ -30,9 +30,11 @@
 #define PIN_EN 32
 // Burn wire - Gatilho
 #define PIN_BURN 33
+
 // INSTANCIAS
 HardwareSerial SerialPLD(2); // UART - RPi zero W
 SPIClass SPIh(HSPI); // HSPI - SD card
+
 // Cada bit representa um subsistema que terminou sua inicialização.
 #define EPS_READY       (1 << 0)
 #define UART_READY      (1 << 1)
@@ -41,8 +43,10 @@ SPIClass SPIh(HSPI); // HSPI - SD card
 #define VSPI_READY      (1 << 4)
 #define INIT_ERROR      (1 << 5)
 #define MISSION_READY   (1 << 6)
+
 // Event Group
 EventGroupHandle_t systemEvents;
+
 // TASK - INICIALIZAÇÃO DO EPS
 void TaskEPS(void *parameter) { Serial.println("[BOOT] Inicializando EPS...");
   if (EPSinit()) {
@@ -52,29 +56,35 @@ void TaskEPS(void *parameter) { Serial.println("[BOOT] Inicializando EPS...");
     Serial.println("[ERRO] Falha na inicialização do EPS");
     xEventGroupSetBits(systemEvents, INIT_ERROR);}
   vTaskDelete(NULL);}
+
 // TASK - INICIALIZAÇÃO DAS COMUNICAÇÕES
 void TaskCommunication(void *parameter) {
   Serial.println("[BOOT] Inicializando interfaces de comunicação...");
  SerialPLD.begin( 115200, SERIAL_8N1, PIN_RXpld, PIN_TXpld);
   Serial.println("[OK] UART inicializada");
   xEventGroupSetBits(systemEvents, UART_READY);
+
 // I2C - TC, EPS e ADCS
 Wire.begin(PIN_SDAitc, PIN_SCLitc, 400000);
   Serial.println("[OK] I2C inicializado");
   xEventGroupSetBits(systemEvents, I2C_READY);
  vTaskDelete(NULL);}
+
 // TASK - INICIALIZAÇÃO DAS INTERFACES SPI
 void TaskSPI(void *parameter) {
   Serial.println("[BOOT] Inicializando interfaces SPI...");
+
  // HSPI - SD Card
 SPIh.begin(PIN_SCKh, PIN_MISOh, PIN_MOSIh, PIN_CSh);
-  Serial.println("[OK] HSPI inicializado");
+  Serial.println("[OK] HSPI (SD Card) inicializado");
   xEventGroupSetBits(systemEvents, HSPI_READY);
+
   // VSPI - LoRa SX1276
  SPI.begin(PIN_SCKv, PIN_MISOv, PIN_MOSIv, PIN_CSv);
-  Serial.println("[OK] VSPI inicializado");
+  Serial.println("[OK] VSPI (LoRa SX1276) inicializado");
   xEventGroupSetBits(systemEvents, VSPI_READY);
  vTaskDelete(NULL);}
+
 // TASK - GERENCIADOR DE BOOT
 void TaskBootManager(void *parameter) {
   Serial.println("[BOOT] Aguardando inicialização dos subsistemas...");
@@ -86,6 +96,7 @@ const EventBits_t requiredBits =
     VSPI_READY;
   while (1) {
 EventBits_t bits = xEventGroupWaitBits(systemEvents, requiredBits | INIT_ERROR, pdFALSE, pdFALSE, portMAX_DELAY);
+
   // VERIFICA SE OCORREU ERRO
 if (bits & INIT_ERROR) {
       Serial.println();
@@ -93,12 +104,14 @@ if (bits & INIT_ERROR) {
       Serial.println("   FALHA NA INICIALIZAÇÃO");
       Serial.println();
       Serial.println();
+
  // LED piscando indica falha crítica
       while (1) {
         digitalWrite( LED_BUILTIN, !digitalRead(LED_BUILTIN));
 vTaskDelay(pdMS_TO_TICKS(500));
       }
     }
+
  // VERIFICA SE TODOS OS SUBSISTEMAS ESTÃO PRONTOS
 if ((bits & requiredBits) == requiredBits) {
       Serial.println();
@@ -130,7 +143,7 @@ void setup() {
    Serial.println("       OBC FCP-01 BOOT");
   systemEvents = xEventGroupCreate();
   // Falha crítica
-if (systemEvents == NULL) {
+  if (systemEvents == NULL) {
     Serial.println(
       "[FATAL] Falha ao criar Event Group!");
     while (1) {
@@ -139,43 +152,13 @@ if (systemEvents == NULL) {
         !digitalRead(LED_BUILTIN));
       delay(200);}
   }
-Serial.println(
-    "[BOOT] Event Group criado");
-  xTaskCreate(
-    TaskEPS,
-    "TaskEPS",
-    4096,
-    NULL,
-    2,
-    NULL
-  );
-  xTaskCreate(
-    TaskCommunication,
-    "TaskCommunication",
-    4096,
-    NULL,
-    2,
-    NULL
-  );
-   xTaskCreate(
-    TaskSPI,
-    "TaskSPI",
-    4096,
-    NULL,
-    2,
-    NULL
-  );
-   xTaskCreate(
-    TaskBootManager,
-    "TaskBootManager",
-    4096,
-    NULL,
-    3,
-    NULL
-  );
+  Serial.println("[BOOT] Event Group criado");
 
-  Serial.println(
-    "[BOOT] Tasks de inicialização criadas");
+  xTaskCreate(TaskEPS, "TaskEPS", 4096, NULL, 2, NULL);
+  xTaskCreate(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL);
+  xTaskCreate(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL);
+  xTaskCreate(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL);
+  Serial.println("[BOOT] Tasks de inicialização criadas");
 }
 void loop() {
  vTaskDelay(
