@@ -1,17 +1,13 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
-#include <HardwareSerial.h>
 #include "../eps-tc/src/eps.h"
 #include "esp_heap_caps.h"
 #include "sd_logger.h"
+#include "base_comms.h"
 
 // Pinagem
 #define LED_BUILTIN 2
-
-// UART - RPi zero W
-#define PIN_RXpld 16
-#define PIN_TXpld 17
 
 // I2C - TC, EPS e ADCS
 #define PIN_SDAitc 21
@@ -25,12 +21,6 @@
 #define PIN_RSTv 14
 #define PIN_DIO0v 4
 
-// HSPI - SD card OBC
-#define PIN_SCKh 15
-#define PIN_MISOh 35 // Input-only
-#define PIN_MOSIh 12
-#define PIN_CSh 13
-
 // PWM - SimpleFOC
 #define PIN_PWMu 25
 #define PIN_PWMv 26
@@ -39,10 +29,6 @@
 
 // Burn wire - Gatilho
 #define PIN_BURN 33
-
-// INSTANCIAS
-HardwareSerial SerialPLD(2); // UART - RPi zero W
-SPIClass SPIh(HSPI); // HSPI - SD card
 
 // Cada bit representa um subsistema que terminou sua inicialização.
 #define EPS_READY       (1 << 0)
@@ -67,15 +53,10 @@ void TaskEPS(void *parameter) { Serial.println("[BOOT] Inicializando EPS...");
     xEventGroupSetBits(systemEvents, INIT_ERROR);}
   vTaskDelete(NULL);}
 
-// TASK - INICIALIZAÇÃO DAS COMUNICAÇÕES
-void TaskCommunication(void *parameter) {
-  Serial.println("[BOOT] Inicializando interfaces de comunicação...");
- SerialPLD.begin( 115200, SERIAL_8N1, PIN_RXpld, PIN_TXpld);
-  Serial.println("[OK] UART inicializada");
-  xEventGroupSetBits(systemEvents, UART_READY);
-
 // I2C - TC, EPS e ADCS
-Wire.begin(PIN_SDAitc, PIN_SCLitc, 400000);
+void TaskCommunication(void *parameter) {
+Serial.println("[BOOT] Inicializando interfaces de comunicação...");
+ Wire.begin(PIN_SDAitc, PIN_SCLitc, 400000);
   Serial.println("[OK] I2C inicializado");
   xEventGroupSetBits(systemEvents, I2C_READY);
  vTaskDelete(NULL);}
@@ -83,11 +64,6 @@ Wire.begin(PIN_SDAitc, PIN_SCLitc, 400000);
 // TASK - INICIALIZAÇÃO DAS INTERFACES SPI
 void TaskSPI(void *parameter) {
   Serial.println("[BOOT] Inicializando interfaces SPI...");
-
- // HSPI - SD Card
-SPIh.begin(PIN_SCKh, PIN_MISOh, PIN_MOSIh, PIN_CSh);
-  Serial.println("[OK] HSPI (SD Card) inicializado");
-  xEventGroupSetBits(systemEvents, HSPI_READY);
   // VSPI - LoRa SX1276
  SPI.begin(PIN_SCKv, PIN_MISOv, PIN_MOSIv, PIN_CSv);
   Serial.println("[OK] VSPI (LoRa SX1276) inicializado");
@@ -99,9 +75,7 @@ void TaskBootManager(void *parameter) {
   Serial.println("[BOOT] Aguardando inicialização dos subsistemas...");
 const EventBits_t requiredBits =
     EPS_READY |
-    UART_READY |
     I2C_READY |
-    HSPI_READY |
     VSPI_READY;
   while (1) {
 EventBits_t bits = xEventGroupWaitBits(systemEvents, requiredBits | INIT_ERROR, pdFALSE, pdFALSE, portMAX_DELAY);
@@ -144,12 +118,30 @@ void setup() {
   digitalWrite(PIN_EN, LOW); // Driver do motor desligado
   
   Serial.begin(115200);
-  
+//CARTÃO SD
 if (SD_Init())
-{ if (SD_CreateLog())
-    { SD_StartTask();
+    { if (SD_CreateLog())
+        { if (SD_StartTask())
+            { Serial.println("[OBC] SD pronto.");
+            } else
+            { Serial.println("[OBC] ERRO: SD Task nao iniciou.");
+            }
+        } else
+        { Serial.println("[OBC] ERRO: MISSION.CSV nao foi criado.");
+        }
+    }else
+    { Serial.println("[OBC] ERRO: SD nao inicializado.");
     }
-}
+//BASE/RPI
+if (Base_Init())
+    { if (Base_StartTask())
+        { Serial.println("[OBC] Comunicacao com a base pronta.");
+        } else
+        { Serial.println("[OBC] ERRO: Base Task nao iniciou.");
+        }
+    } else
+    { Serial.println("[OBC] ERRO: UART da base nao inicializada.");
+    }
  
  unsigned long startWait = millis();
   while (!Serial && (millis() - startWait < 3000))
@@ -178,7 +170,5 @@ if (SD_Init())
   Serial.println("[BOOT] Tasks de inicialização criadas");
 }
 void loop() {
- vTaskDelay(
-    pdMS_TO_TICKS(1000)
-  );
+ vTaskDelay( pdMS_TO_TICKS(1000));
 }
