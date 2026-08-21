@@ -101,43 +101,17 @@ void TaskBootManager(void *parameter) {
   if (bits & INIT_ERROR) {
     while (1) {
       digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-      vTaskDelay(pdMS_TO_TICKS(200));
+      vTaskDelay(pdMS_TO_TICKS(500));
     }
   }
   if ((bits & requiredBits) == requiredBits) {
+    Serial.println();
+    Serial.println("   OBC FCP-01");
+    Serial.println("   PRONTO PARA MISSAO");
     xEventGroupSetBits(systemEvents, MISSION_READY);
   }
   vTaskDelete(NULL);
 }
-
-  // VERIFICA SE OCORREU ERRO
-if (bits & INIT_ERROR) {
-      Serial.println();
-      Serial.println("   FALHA NA INICIALIZAÇÃO");
-      Serial.println();
-      Serial.println();
-
- // LED piscando indica falha crítica
-      while (1) {
-        digitalWrite( LED_BUILTIN, !digitalRead(LED_BUILTIN));
-vTaskDelay(pdMS_TO_TICKS(500));
-      }
-    }
-
- // VERIFICA SE TODOS OS SUBSISTEMAS ESTÃO PRONTOS
-if ((bits & requiredBits) == requiredBits) {
-      Serial.println();
-      Serial.println("          OBC FCP-01");
-      Serial.println("      PRONTO PARA MISSÃO");
-      Serial.println();
-
-  // Marca o sistema como pronto para missão
-      xEventGroupSetBits(systemEvents, MISSION_READY);
-      break;}
-  }
-  
-  // Boot concluído
-  vTaskDelete(NULL);}
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -148,6 +122,11 @@ void setup() {
   digitalWrite(PIN_EN, LOW); // Driver do motor desligado
   
   Serial.begin(115200);
+
+  // Inicializa o watchdog antes de criar qualquer task supervisionada.
+  esp_task_wdt_init(10, true);
+  esp_task_wdt_add(NULL);
+
 //CARTÃO SD
 if (SD_Init())
     { if (SD_CreateLog())
@@ -198,10 +177,6 @@ if (Base_Init())
   xTaskCreate(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL);
   xTaskCreate(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL);
   Serial.println("[BOOT] Tasks de inicialização criadas");
-
- //Watchdog de reinicialização
- esp_task_wdt_init(10, true);
-esp_task_wdt_add(NULL);
 }
 void loop() {
 esp_task_wdt_reset();

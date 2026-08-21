@@ -10,13 +10,13 @@ static TaskHandle_t xBaseTask = NULL;
 // BASE TASK
 static void Base_Task(void* parameter) {
     LogPacket packet;
-    Serial.println ("Base Task iniciada")
+    Serial.println("[BASE] Base Task iniciada");
     esp_task_wdt_add(NULL);
 
     while (true) {
         esp_task_wdt_reset();
 
-        if (xQueueReceive(xQueueBaseTx, &packet, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (xQueueReceive(xQueueBase, &packet, pdMS_TO_TICKS(10)) == pdTRUE) {
             SerialPLD.print("{\"data\":\""); SerialPLD.print(packet.data);
             SerialPLD.print("\",\"time\":\""); SerialPLD.print(packet.time);
             SerialPLD.print("\",\"type\":"); SerialPLD.print(packet.type);
@@ -32,7 +32,6 @@ static void Base_Task(void* parameter) {
     }
 }
 // INICIALIZAÇÃO
-bool Base_Init()
 bool Base_Init() {
     SerialPLD.setRxBufferSize(SERIAL_BUF_SIZE); // Expande de 256 para 1024 bytes
     SerialPLD.begin(BASE_BAUDRATE, SERIAL_8N1, PIN_RXpld, PIN_TXpld);
@@ -89,11 +88,20 @@ bool Base_StartTask()
 
 // ENVIO
 bool Base_SendPacket(const LogPacket& packet) {
-    if (xQueueBaseTx == NULL) return false;
+    if (xQueueBase == NULL) return false;
 
     if (packet.type == LOG_EVENT || packet.type == LOG_SYSTEM) {
-        return (xQueueSendToFront(xQueueBaseTx, &packet, pdMS_TO_TICKS(100)) == pdTRUE);
-        Serial.println ("Base quase cheia!")
+        if (xQueueSendToFront(xQueueBase, &packet, pdMS_TO_TICKS(100)) == pdTRUE) {
+            return true;
+        }
+        Serial.println("[BASE] Queue quase cheia!");
+        return false;
     }
-    return (xQueueSend(xQueueBaseTx, &packet, pdMS_TO_TICKS(100)) == pdTRUE);
+
+    if (xQueueSend(xQueueBase, &packet, pdMS_TO_TICKS(100)) == pdTRUE) {
+        return true;
+    }
+
+    Serial.println("[BASE] Queue quase cheia!");
+    return false;
 }
