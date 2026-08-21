@@ -38,9 +38,9 @@ typedef struct
     LogType type;
 
     char data[11];      // YYYY-MM-DD
-    char time[16];      // HH:MM:SS.mmm
+    char time[20];      // HH:MM:SS.mmm
 
-    char payload[256];
+    char payload[200];
 
 } LogPacket;
 
