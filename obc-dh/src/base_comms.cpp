@@ -10,7 +10,7 @@ static TaskHandle_t xBaseTask = NULL;
 // BASE TASK
 static void Base_Task(void* parameter) {
     LogPacket packet;
-    Serial.println ("Base Task iniciada")
+    Serial.println ("Base Task iniciada");
     esp_task_wdt_add(NULL);
 
     while (true) {
@@ -93,7 +93,6 @@ bool Base_SendPacket(const LogPacket& packet) {
 
     if (packet.type == LOG_EVENT || packet.type == LOG_SYSTEM) {
         return (xQueueSendToFront(xQueueBaseTx, &packet, pdMS_TO_TICKS(100)) == pdTRUE);
-        Serial.println ("Base quase cheia!")
     }
     return (xQueueSend(xQueueBaseTx, &packet, pdMS_TO_TICKS(100)) == pdTRUE);
 }
