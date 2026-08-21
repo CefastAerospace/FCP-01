@@ -44,6 +44,8 @@ RTC_DS3231 rtc;
 #define VSPI_READY      (1 << 5)
 #define INIT_ERROR      (1 << 6)
 #define MISSION_READY   (1 << 7)
+#define SD_READY        (1 << 8)
+#define BASE_READY      (1 << 9)
 
 // Event Group
 EventGroupHandle_t systemEvents;
@@ -108,6 +110,13 @@ void TaskBootManager(void *parameter) {
     Serial.println();
     Serial.println("   OBC FCP-01");
     Serial.println("   PRONTO PARA MISSAO");
+    EventBits_t optionalBits = xEventGroupGetBits(systemEvents);
+    if ((optionalBits & SD_READY) == 0) {
+      Serial.println("   AVISO: SD indisponivel");
+    }
+    if ((optionalBits & BASE_READY) == 0) {
+      Serial.println("   AVISO: BASE indisponivel");
+    }
     xEventGroupSetBits(systemEvents, MISSION_READY);
   }
   vTaskDelete(NULL);
@@ -127,11 +136,33 @@ void setup() {
   esp_task_wdt_init(10, true);
   esp_task_wdt_add(NULL);
 
+  while (!Serial) {
+    static const unsigned long serialWaitStart = millis();
+    if (millis() - serialWaitStart >= 3000) {
+      break;
+    }
+    delay(100);
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+  }
+  digitalWrite(LED_BUILTIN, HIGH);
+  Serial.println("       OBC FCP-01 BOOT");
+
+  systemEvents = xEventGroupCreate();
+  if (systemEvents == NULL) {
+    Serial.println("[FATAL] Falha ao criar Event Group!");
+    while (true) {
+      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+      delay(200);
+    }
+  }
+  Serial.println("[BOOT] Event Group criado");
+
 //CARTÃO SD
 if (SD_Init())
     { if (SD_CreateLog())
         { if (SD_StartTask())
-            { Serial.println("[OBC] SD pronto.");
+            { xEventGroupSetBits(systemEvents, HSPI_READY | SD_READY);
+              Serial.println("[OBC] SD pronto.");
             } else
             { Serial.println("[OBC] ERRO: SD Task nao iniciou.");
             }
@@ -144,7 +175,8 @@ if (SD_Init())
 //BASE/RPI
 if (Base_Init())
     { if (Base_StartTask())
-        { Serial.println("[OBC] Comunicacao com a base pronta.");
+        { xEventGroupSetBits(systemEvents, UART_READY | BASE_READY);
+          Serial.println("[OBC] Comunicacao com a base pronta.");
         } else
         { Serial.println("[OBC] ERRO: Base Task nao iniciou.");
         }
@@ -152,26 +184,6 @@ if (Base_Init())
     { Serial.println("[OBC] ERRO: UART da base nao inicializada.");
     }
  
- unsigned long startWait = millis();
-  while (!Serial && (millis() - startWait < 3000))
-  {delay(100);
-    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));} // Pisca o LED enquanto espera a inicialização da Serial
-  digitalWrite(LED_BUILTIN, HIGH);
-   Serial.println("       OBC FCP-01 BOOT");
-  systemEvents = xEventGroupCreate();
-  
-  // Falha crítica
-  if (systemEvents == NULL) {
-    Serial.println(
-      "[FATAL] Falha ao criar Event Group!");
-    while (1) {
-      digitalWrite(
-        LED_BUILTIN,
-        !digitalRead(LED_BUILTIN));
-      delay(200);}
-  }
-  Serial.println("[BOOT] Event Group criado");
-
   xTaskCreate(TaskEPS, "TaskEPS", 4096, NULL, 2, NULL);
   xTaskCreate(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL);
   xTaskCreate(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL);

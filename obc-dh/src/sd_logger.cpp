@@ -115,33 +115,13 @@ bool SD_Log(
     const char* dataPacket
 )
 {
-    if (!sdAvailable)
-    {
-        return false;
-    }
+    LogPacket packet = {};
+    snprintf(packet.data, sizeof(packet.data), "%s", data != nullptr ? data : "");
+    snprintf(packet.time, sizeof(packet.time), "%s", time != nullptr ? time : "");
+    snprintf(packet.payload, sizeof(packet.payload), "%s", dataPacket != nullptr ? dataPacket : "");
+    packet.type = type;
 
-    File file = SD.open(SD_LOG_FILE, FILE_APPEND);
-
-    if (!file)
-    {
-        Serial.println("[SD] ERRO ao abrir MISSION.CSV!");
-        return false;
-    }
-
-    file.print(data);
-    file.print(",");
-
-    file.print(time);
-    file.print(",");
-
-    file.print(LogTypeToString(type));
-    file.print(",");
-
-    file.println(dataPacket);
-
-    file.close();
-
-    return true;
+    return SD_SendLog(packet);
 }
 
 // SD TASK
@@ -150,17 +130,40 @@ static void SD_Task(void* parameter) {
     uint8_t syncCounter = 0;
     esp_task_wdt_add(NULL); // Adiciona a task ao watchdog
 
-    // Abre o arquivo uma vez antes do loop infinito
-    File file = SD.open(SD_LOG_FILE, FILE_APPEND);
+    File file;
+    unsigned long lastOpenAttempt = 0;
 
     while (true) {
         esp_task_wdt_reset(); // Alimenta o watchdog
+
+        if (!file && millis() - lastOpenAttempt >= 1000) {
+            lastOpenAttempt = millis();
+
+            if (!sdAvailable) {
+                SD_Init();
+            }
+            if (sdAvailable) {
+                SD_CreateLog();
+                file = SD.open(SD_LOG_FILE, FILE_APPEND);
+            }
+        }
+
         if (xQueueReceive(xQueueLog, &packet, pdMS_TO_TICKS(100)) == pdTRUE) {
             if (sdAvailable && file) {
-                file.print(packet.data); file.print(",");
-                file.print(packet.time); file.print(",");
-                file.print(LogTypeToString(packet.type)); file.print(",");
-                file.println(packet.payload);
+                bool writeOk = file.print(packet.data) > 0;
+                writeOk = writeOk && file.print(",") > 0;
+                writeOk = writeOk && file.print(packet.time) > 0;
+                writeOk = writeOk && file.print(",") > 0;
+                writeOk = writeOk && file.print(LogTypeToString(packet.type)) > 0;
+                writeOk = writeOk && file.print(",") > 0;
+                writeOk = writeOk && file.println(packet.payload) > 0;
+
+                if (!writeOk) {
+                    Serial.println("[SD] Erro de escrita; tentando remontar.");
+                    file.close();
+                    sdAvailable = false;
+                    continue;
+                }
 
                 syncCounter++;
                 if (syncCounter >= 5) {
