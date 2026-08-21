@@ -5,9 +5,14 @@
 #include "esp_heap_caps.h"
 #include "sd_logger.h"
 #include "base_comms.h"
+#include <RTClib.h>
+#include "esp_task_wdt.h"
 
 // Pinagem
 #define LED_BUILTIN 2
+
+//Instanciação do RTC
+RTC_DS3231 rtc;
 
 // I2C - TC, EPS e ADCS
 #define PIN_SDAitc 21
@@ -35,12 +40,21 @@
 #define UART_READY      (1 << 1)
 #define I2C_READY       (1 << 2)
 #define HSPI_READY      (1 << 3)
-#define VSPI_READY      (1 << 4)
-#define INIT_ERROR      (1 << 5)
-#define MISSION_READY   (1 << 6)
+#define RTC_READY       (1 << 4)
+#define VSPI_READY      (1 << 5)
+#define INIT_ERROR      (1 << 6)
+#define MISSION_READY   (1 << 7)
 
 // Event Group
 EventGroupHandle_t systemEvents;
+
+//Timestamp universal
+void GetCurrentTimestamp(char* buffer, size_t maxLen) {
+    DateTime now = rtc.now();
+    snprintf(buffer, maxLen, "%04d-%02d-%02dT%02d:%02d:%02d", 
+             now.year(), now.month(), now.day(), 
+             now.hour(), now.minute(), now.second());
+}
 
 // TASK - INICIALIZAÇÃO DO EPS
 void TaskEPS(void *parameter) { Serial.println("[BOOT] Inicializando EPS...");
@@ -55,11 +69,21 @@ void TaskEPS(void *parameter) { Serial.println("[BOOT] Inicializando EPS...");
 
 // I2C - TC, EPS e ADCS
 void TaskCommunication(void *parameter) {
-Serial.println("[BOOT] Inicializando interfaces de comunicação...");
- Wire.begin(PIN_SDAitc, PIN_SCLitc, 400000);
-  Serial.println("[OK] I2C inicializado");
-  xEventGroupSetBits(systemEvents, I2C_READY);
- vTaskDelete(NULL);}
+  if (Wire.begin(PIN_SDAitc, PIN_SCLitc, 400000)) {
+    if (rtc.begin()) {
+      if (rtc.lostPower()) {
+        // Se a bateria do RTC descarregou, usa a data/hora da compilação como fallback
+        rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+      }
+      xEventGroupSetBits(systemEvents, I2C_READY | RTC_READY);
+    } else {
+      xEventGroupSetBits(systemEvents, INIT_ERROR);
+    }
+  } else {
+    xEventGroupSetBits(systemEvents, INIT_ERROR);
+  }
+  vTaskDelete(NULL);
+}
 
 // TASK - INICIALIZAÇÃO DAS INTERFACES SPI
 void TaskSPI(void *parameter) {
@@ -72,13 +96,19 @@ void TaskSPI(void *parameter) {
 
 // TASK - GERENCIADOR DE BOOT
 void TaskBootManager(void *parameter) {
-  Serial.println("[BOOT] Aguardando inicialização dos subsistemas...");
-const EventBits_t requiredBits =
-    EPS_READY |
-    I2C_READY |
-    VSPI_READY;
-  while (1) {
-EventBits_t bits = xEventGroupWaitBits(systemEvents, requiredBits | INIT_ERROR, pdFALSE, pdFALSE, portMAX_DELAY);
+  const EventBits_t requiredBits = EPS_READY | I2C_READY | RTC_READY | VSPI_READY;
+  EventBits_t bits = xEventGroupWaitBits(systemEvents, requiredBits | INIT_ERROR, pdFALSE, pdFALSE, portMAX_DELAY);
+  if (bits & INIT_ERROR) {
+    while (1) {
+      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+      vTaskDelay(pdMS_TO_TICKS(200));
+    }
+  }
+  if ((bits & requiredBits) == requiredBits) {
+    xEventGroupSetBits(systemEvents, MISSION_READY);
+  }
+  vTaskDelete(NULL);
+}
 
   // VERIFICA SE OCORREU ERRO
 if (bits & INIT_ERROR) {
@@ -168,7 +198,12 @@ if (Base_Init())
   xTaskCreate(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL);
   xTaskCreate(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL);
   Serial.println("[BOOT] Tasks de inicialização criadas");
+
+ //Watchdog de reinicialização
+ esp_task_wdt_init(10, true);
+esp_task_wdt_add(NULL);
 }
 void loop() {
- vTaskDelay( pdMS_TO_TICKS(1000));
+esp_task_wdt_reset();
+  vTaskDelay(pdMS_TO_TICKS(1000));
 }
