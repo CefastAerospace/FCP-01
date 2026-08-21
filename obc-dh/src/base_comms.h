@@ -8,6 +8,7 @@
 #define PIN_TXpld 17
 
 #define BASE_BAUDRATE 115200
+#define SERIAL_BUF_SIZE 1024
 
 // QUEUE
 #define BASE_QUEUE_LENGTH 20
