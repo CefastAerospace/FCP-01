@@ -100,7 +100,7 @@ bool SD_CreateLog()
         return false;
     }
 
-    file.println(""DATE,TIME,TYPE,PAYLOAD_DATA"");
+    file.println("DATE,TIME,TYPE,PAYLOAD_DATA");
     file.close();
     Serial.println("[SD] MISSION.CSV criado!");
     return true;
@@ -159,7 +159,7 @@ static void SD_Task(void* parameter) {
             if (sdAvailable && file) {
                 file.print(packet.data); file.print(",");
                 file.print(packet.time); file.print(",");
-                file.print(packet.type); file.print(",");
+                file.print(LogTypeToString(packet.type));
                 file.println(packet.payload);
 
                 syncCounter++;
@@ -169,6 +169,7 @@ static void SD_Task(void* parameter) {
                 }
             }
         }
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 // CRIAÇÃO DA TASK
