@@ -8,46 +8,35 @@ static QueueHandle_t xQueueBase = NULL;
 static TaskHandle_t xBaseTask = NULL;
 
 // BASE TASK
-static void Base_Task(void* parameter)
-{
+static void Base_Task(void* parameter) {
     LogPacket packet;
+    Serial.println ("Base Task iniciada")
+    esp_task_wdt_add(NULL);
 
-    Serial.println("[BASE TASK] Iniciada.");
+    while (true) {
+        esp_task_wdt_reset();
 
-    while (true)
-    {
-        if (xQueueReceive(
-                xQueueBase,
-                &packet,
-                portMAX_DELAY
-            ) == pdTRUE)
-        {
-            SerialPLD.print(packet.data);
-            SerialPLD.print(",");
-
-            SerialPLD.print(packet.time);
-            SerialPLD.print(",");
-
-            SerialPLD.print(packet.type);
-            SerialPLD.print(",");
-
-            SerialPLD.println(packet.payload);
+        if (xQueueReceive(xQueueBaseTx, &packet, pdMS_TO_TICKS(10)) == pdTRUE) {
+            SerialPLD.print("{\"data\":\""); SerialPLD.print(packet.data);
+            SerialPLD.print("\",\"time\":\""); SerialPLD.print(packet.time);
+            SerialPLD.print("\",\"type\":"); SerialPLD.print(packet.type);
+            SerialPLD.print(",\"payload\":"); SerialPLD.print(packet.payload);
+            SerialPLD.println("}");
         }
+
+        // Loop de escuta bidirecional pronto para o parser do Payload
+        while (SerialPLD.available() > 0) {
+            char c = SerialPLD.read();
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
-
 // INICIALIZAÇÃO
 bool Base_Init()
-{
-    SerialPLD.begin(
-        BASE_BAUDRATE,
-        SERIAL_8N1,
-        PIN_RXpld,
-        PIN_TXpld
-    );
-
+bool Base_Init() {
+    SerialPLD.setRxBufferSize(SERIAL_BUF_SIZE); // Expande de 256 para 1024 bytes
+    SerialPLD.begin(BASE_BAUDRATE, SERIAL_8N1, PIN_RXpld, PIN_TXpld);
     Serial.println("[BASE] UART inicializada.");
-
     return true;
 }
 
@@ -99,25 +88,12 @@ bool Base_StartTask()
 }
 
 // ENVIO
-bool Base_SendPacket(const LogPacket& packet)
-{
-    if (xQueueBase == NULL)
-    {
-        return false;
+bool Base_SendPacket(const LogPacket& packet) {
+    if (xQueueBaseTx == NULL) return false;
+
+    if (packet.type == LOG_EVENT || packet.type == LOG_SYSTEM) {
+        return (xQueueSendToFront(xQueueBaseTx, &packet, pdMS_TO_TICKS(100)) == pdTRUE);
+        Serial.println ("Base quase cheia!")
     }
-
-    if (xQueueSend(
-            xQueueBase,
-            &packet,
-            pdMS_TO_TICKS(100)
-        ) != pdTRUE)
-    {
-        Serial.println(
-            "[BASE] Queue cheia!"
-        );
-
-        return false;
-    }
-
-    return true;
+    return (xQueueSend(xQueueBaseTx, &packet, pdMS_TO_TICKS(100)) == pdTRUE);
 }
