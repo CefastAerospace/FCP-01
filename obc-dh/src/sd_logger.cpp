@@ -100,7 +100,7 @@ bool SD_CreateLog()
         return false;
     }
 
-    file.println("DATA,HORA,TIPO,DADOS");
+    file.println(""DATE,TIME,TYPE,PAYLOAD_DATA"");
     file.close();
     Serial.println("[SD] MISSION.CSV criado!");
     return true;
@@ -145,35 +145,32 @@ bool SD_Log(
 }
 
 // SD TASK
-static void SD_Task(void* parameter)
-{
+static void SD_Task(void* parameter) {
     LogPacket packet;
+    uint8_t syncCounter = 0;
+    esp_task_wdt_add(NULL); // Adiciona a task ao watchdog
 
-    Serial.println("[SD TASK] Iniciada.");
+    // Abre o arquivo uma vez antes do loop infinito
+    File file = SD.open(SD_LOG_FILE, FILE_APPEND);
 
-    while (true)
-    {
-        if (xQueueReceive(
-                xQueueLog,
-                &packet,
-                portMAX_DELAY
-            ) == pdTRUE)
-        {
-            if (!SD_Log(
-                    packet.data,
-                    packet.time,
-                    packet.type,
-                    packet.payload
-                ))
-            {
-                Serial.println(
-                    "[SD TASK] ERRO ao gravar pacote!"
-                );
+    while (true) {
+        esp_task_wdt_reset(); // Alimenta o watchdog
+        if (xQueueReceive(xQueueLog, &packet, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (sdAvailable && file) {
+                file.print(packet.data); file.print(",");
+                file.print(packet.time); file.print(",");
+                file.print(packet.type); file.print(",");
+                file.println(packet.payload);
+
+                syncCounter++;
+                if (syncCounter >= 5) {
+                    file.flush(); // Salva fisicamente no cartão sem fechar o arquivo
+                    syncCounter = 0;
+                }
             }
         }
     }
 }
-
 // CRIAÇÃO DA TASK
 bool SD_StartTask()
 {
@@ -240,27 +237,15 @@ bool SD_StartTask()
 }
 
 // ENVIO PARA A QUEUE
-bool SD_SendLog(const LogPacket& packet)
-{
-    if (xQueueLog == NULL)
-    {
-        return false;
+bool SD_SendLog(const LogPacket& packet) {
+    if (xQueueLog == NULL) return false;
+
+    // Se for um evento crítico ou sistema, joga direto para o início da fila
+    if (packet.type == LOG_EVENT || packet.type == LOG_SYSTEM) {
+        return (xQueueSendToFront(xQueueLog, &packet, pdMS_TO_TICKS(100)) == pdTRUE);
     }
-
-    if (xQueueSend(
-            xQueueLog,
-            &packet,
-            pdMS_TO_TICKS(100)
-        ) != pdTRUE)
-    {
-        Serial.println(
-            "[SD] Queue cheia! Pacote perdido."
-        );
-
-        return false;
-    }
-
-    return true;
+    // Dados normais entram no fim da fila (FIFO)
+    return (xQueueSend(xQueueLog, &packet, pdMS_TO_TICKS(100)) == pdTRUE);
 }
 
 // STATUS
