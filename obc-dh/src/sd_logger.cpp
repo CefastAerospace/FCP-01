@@ -217,7 +217,7 @@ bool SD_StartTask()
         NULL,
         2,
         &xSDTask,
-        1
+        0
     );
 
     if (result != pdPASS)

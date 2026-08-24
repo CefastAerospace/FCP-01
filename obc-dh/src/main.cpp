@@ -184,10 +184,10 @@ if (Base_Init())
     { Serial.println("[OBC] ERRO: UART da base nao inicializada.");
     }
  
-  xTaskCreate(TaskEPS, "TaskEPS", 4096, NULL, 2, NULL);
-  xTaskCreate(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL);
-  xTaskCreate(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL);
-  xTaskCreate(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL);
+  xTaskCreatePinnedToCore(TaskEPS, "TaskEPS", 4096, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL, 0);
+  xTaskCreatePinnedToCore(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL, 0);
   Serial.println("[BOOT] Tasks de inicialização criadas");
 }
 void loop() {
