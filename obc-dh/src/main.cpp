@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include "../eps-tc/src/eps.h"
+#include "../tt-c/src/ttc.h"
 #include "esp_heap_caps.h"
 #include "sd_logger.h"
 #include "base_comms.h"
