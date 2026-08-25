@@ -63,7 +63,7 @@ bool Base_StartTask()
         "Base_Task",
         4096,
         NULL,
-        3,
+        2,
         &xBaseTask,
         CORE_IO
     );

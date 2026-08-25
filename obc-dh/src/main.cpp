@@ -2,7 +2,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include "../eps-tc/src/eps.h"
-#include "tt-c/ttc.h" // Corrigido: Incluir apenas o header do ttc
+#include "../tt-c/src/ttc.h" 
 #include "esp_heap_caps.h"
 #include "sd_logger.h"
 #include "base_comms.h"
@@ -217,7 +217,7 @@ void setup() {
     }
 
     // Instanciação das tarefas de inicialização
-    xTaskCreatePinnedToCore(TaskEPS, "TaskEPS", 4096, NULL, 2, NULL, CORE_IO);
+    xTaskCreatePinnedToCore(TaskEPS, "TaskEPS", 4096, NULL, 4, NULL, CORE_IO);
     xTaskCreatePinnedToCore(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL, CORE_IO);
     xTaskCreatePinnedToCore(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL, CORE_IO);
     xTaskCreatePinnedToCore(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL, CORE_IO);
