@@ -63,17 +63,37 @@ void GetCurrentTimestamp(char* buffer, size_t maxLen) {
              now.hour(), now.minute(), now.second());
 }
 
-// TASK - INICIALIZAÇÃO DO EPS
+// TASK - SUBSISTEMA EPS (Supervisão e Monitoramento Contínuo)
 void TaskEPS(void *parameter) { 
     Serial.println("[BOOT] Inicializando EPS...");
-    if (EPSinit()) {
+    
+    // Utiliza a nova interface padronizada EPS_Init()
+    if (EPS_Init() == SUBSYSTEM_OK) {
         Serial.println("[OK] EPS inicializado");
         xEventGroupSetBits(systemEvents, EPS_READY);
     } else {
         Serial.println("[ERRO] Falha na inicialização do EPS");
         xEventGroupSetBits(systemEvents, INIT_ERROR);
+        vTaskDelete(NULL); // Cancela a tarefa em caso de erro crítico de boot
+        return;
     }
-    vTaskDelete(NULL);
+
+    esp_task_wdt_add(NULL); // Registra a task no Watchdog
+
+    // Loop operacional do EPS no Core 0
+    for (;;) {
+        esp_task_wdt_reset();
+
+        // Lógica padronizada de leitura e verificação de limites
+        EPS_Telemetry_t telemetryData;
+        if (EPS_GetTelemetry(&telemetryData) == SUBSYSTEM_OK) {
+            if (!EPS_HealthCheck()) {
+                Serial.println("[ALERTA] EPS fora dos limites de segurança!");
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Frequência de monitoramento: 1Hz
+    }
 }
 
 // I2C - TC, EPS e ADCS
@@ -228,7 +248,7 @@ void setup() {
         Serial.println("[OBC] ERRO: UART da base nao inicializada.");
     }
 
-    // Instanciação das tarefas de inicialização (Core 0)
+    // Instanciação das tarefas de inicialização e monitoramento (Core 0)
     xTaskCreatePinnedToCore(TaskEPS, "TaskEPS", 4096, NULL, 4, NULL, CORE_IO);
     xTaskCreatePinnedToCore(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL, CORE_IO);
     xTaskCreatePinnedToCore(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL, CORE_IO);
