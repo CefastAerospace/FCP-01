@@ -31,12 +31,17 @@ FCP-01/
 ├── README.md
 ├── .gitignore
 ├── obc-dh/              # ÚNICO firmware real - platformio.ini mora aqui
-│   ├── platformio.ini
-│   ├── src/
-│   │   ├── main.cpp     # setup do FreeRTOS e criação das tasks
-│   │   ├── tasks/        # uma task por subsistema (adcs, eps, ttc, payload_link...)
-│   │   └── drivers/      # periféricos do próprio OBC (sd_card, rtc)
-│   └── include/
+│   ├── include/              # Interfaces globais e headers
+|   ├── src/
+│       ├── main.cpp          # Boot flow, WDT, e instanciação das tasks
+|       ├── sd_logger.h       # Header do Logger do SD Card
+│       ├── sd_logger.cpp     # Gerenciamento assíncrono do SD Card
+│       ├── base_comms.cpp    # Parser e envio via UART da Payload
+|       ├── base_comms.h      # Header da interface UART da Payload
+│   ├── eps-tc/           # Driver do subsistema de potência
+│   ├── rtc/              # Driver e sincronização do RTC
+│   └── tt-c/             # Protocolo PUS, rádio SX1276 e parser de TC
+└── platformio.ini        # Configurações de compilação e dependências
 ├── adcs/                 # biblioteca - consumida pelo obc-dh via lib_extra_dirs
 │   ├── include/
 │   └── src/
