@@ -1,6 +1,8 @@
 #include "base_comms.h"
 #include <HardwareSerial.h>
 
+static constexpr BaseType_t CORE_IO = 0;
+
 HardwareSerial SerialPLD(2);
 
 static QueueHandle_t xQueueBase = NULL;
@@ -63,7 +65,7 @@ bool Base_StartTask()
         NULL,
         3,
         &xBaseTask,
-        0
+        CORE_IO
     );
 
     if (result != pdPASS)

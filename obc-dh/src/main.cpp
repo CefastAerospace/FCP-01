@@ -9,6 +9,10 @@
 #include <RTClib.h>
 #include "esp_task_wdt.h"
 
+// Afinidade dos subsistemas no ESP32 dual-core.
+constexpr BaseType_t CORE_IO = 0;
+constexpr BaseType_t CORE_CONTROL = 1;
+
 // Pinagem
 #define LED_BUILTIN 2
 
@@ -185,10 +189,10 @@ if (Base_Init())
     { Serial.println("[OBC] ERRO: UART da base nao inicializada.");
     }
  
-  xTaskCreatePinnedToCore(TaskEPS, "TaskEPS", 4096, NULL, 2, NULL, 0);
-  xTaskCreatePinnedToCore(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL, 0);
-  xTaskCreatePinnedToCore(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL, 0);
-  xTaskCreatePinnedToCore(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(TaskEPS, "TaskEPS", 4096, NULL, 2, NULL, CORE_IO);
+  xTaskCreatePinnedToCore(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL, CORE_IO);
+  xTaskCreatePinnedToCore(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL, CORE_IO);
+  xTaskCreatePinnedToCore(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL, CORE_IO);
   Serial.println("[BOOT] Tasks de inicialização criadas");
 }
 void loop() {

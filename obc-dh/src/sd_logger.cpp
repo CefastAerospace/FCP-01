@@ -3,6 +3,8 @@
 #include <SPI.h>
 #include <SD.h>
 
+static constexpr BaseType_t CORE_IO = 0;
+
 // SPI
 SPIClass SD_SPI(HSPI);
 
@@ -217,7 +219,7 @@ bool SD_StartTask()
         NULL,
         2,
         &xSDTask,
-        0
+        CORE_IO
     );
 
     if (result != pdPASS)
