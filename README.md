@@ -63,6 +63,26 @@ FCP-01/
         └── pinout.md        # endereços I2C, alocação de pinos e barramentos SPI
 ```
 
+## Estrutura Dual-Core
+
+```text
+OBC (ESP32 - Dual Core)
+├── Core 0 (I/O, Management & System Supervision)
+│   ├── System Manager (TaskBootManager) [Prioridade 3]
+│   ├── Health Monitor (esp_task_wdt + Loop Supervision)
+│   ├── EPS Manager (TaskEPS) [Prioridade 4]
+│   ├── SD Manager / Data Logger (SD_Task) [Prioridade 2]
+│   ├── RTC Manager (TaskCommunication / I2C) [Prioridade 2]
+│   └── Payload Interface (Base_Task / UART) [Prioridade 2]
+│
+└── Core 1 (Control, Comms & Mission Logic)
+    ├── Mode Manager (State Machine / Mission Control)
+    ├── TT&C Manager (TaskTTC / LoRa SX1276) [Prioridade 3]
+    ├── TC Manager (Command Parser & CRC16 Validation)
+    ├── TM Manager (Telemetry Builder & Queue)
+    └── ADCS / Motor Control (SimpleFOC PWM Task) [Prioridade 2]
+```
+
 **Importante:** `adcs/`, `eps-tc/` e `tt-c/` não são firmwares que rodam sozinhos: são bibliotecas que só ganham vida quando compiladas junto com `obc-dh/`. Só `obc-dh/` (no ESP32) e `payload/` (no Raspberry Pi) são projetos que rodam de forma independente.
 
 ## Fluxo de desenvolvimento (Git)
