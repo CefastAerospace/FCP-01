@@ -110,13 +110,18 @@ void TaskSPI(void *parameter) {
     vTaskDelete(NULL);
 }
 
-// TASK OPERACIONAL - PROCESSAMENTO DE COMANDOS DA GROUND STATION
+// TASK OPERACIONAL - PROCESSAMENTO DE COMANDOS DA GROUND STATION (CORE 1)
 void TaskTTC(void *parameter) {
-    Serial.println("[TASK] Loop TT&C iniciado.");
+    Serial.println("[TASK] Loop TT&C iniciado no Core 1.");
+    esp_task_wdt_add(NULL); // Registra a task no Watchdog de Hardware
+
     for (;;) {
-        // Verifica continuamente se chegaram comandos como TC_SET_TIME via LoRa
+        esp_task_wdt_reset(); // Alimenta o Watchdog
+
+        // Processa a entrada de pacotes LoRa e dispara o dispatcher de telecomandos
         TTC_CheckIncomingCommands();
-        vTaskDelay(pdMS_TO_TICKS(200)); // Intervalo de sondagem do rádio
+
+        vTaskDelay(pdMS_TO_TICKS(100)); // Taxa de amostragem de 10Hz
     }
 }
 
@@ -147,8 +152,15 @@ void TaskBootManager(void *parameter) {
         
         xEventGroupSetBits(systemEvents, MISSION_READY);
 
-        // Cria a tarefa de recepção contínua de comandos em tempo de voo (no Core 1)
-        xTaskCreatePinnedToCore(TaskTTC, "TaskTTC", 4096, NULL, 2, NULL, CORE_CONTROL);
+        // Registra o evento de boot concluído no SD Card
+        char dateBuf[12], timeBuf[10];
+        DateTime now = rtc.now();
+        snprintf(dateBuf, sizeof(dateBuf), "%04d-%02d-%02d", now.year(), now.month(), now.day());
+        snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+        SD_Log(dateBuf, timeBuf, LOG_SYSTEM, "OBC Boot Concluido com Sucesso");
+
+        // Cria a tarefa de recepção contínua de comandos no Core 1 (Prioridade 3)
+        xTaskCreatePinnedToCore(TaskTTC, "TaskTTC", 4096, NULL, 3, NULL, CORE_CONTROL);
     }
     vTaskDelete(NULL);
 }
@@ -216,11 +228,11 @@ void setup() {
         Serial.println("[OBC] ERRO: UART da base nao inicializada.");
     }
 
-    // Instanciação das tarefas de inicialização
+    // Instanciação das tarefas de inicialização (Core 0)
     xTaskCreatePinnedToCore(TaskEPS, "TaskEPS", 4096, NULL, 4, NULL, CORE_IO);
     xTaskCreatePinnedToCore(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL, CORE_IO);
-    xTaskCreatePinnedToCore(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL, CORE_IO);
     xTaskCreatePinnedToCore(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL, CORE_IO);
+    xTaskCreatePinnedToCore(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL, CORE_IO);
     
     Serial.println("[BOOT] Tasks de inicialização criadas");
 }
