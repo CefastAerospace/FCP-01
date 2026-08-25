@@ -2,7 +2,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include "../eps-tc/src/eps.h"
-#include "../tt-c/src/ttc.h"
+#include "tt-c/ttc.h" // Corrigido: Incluir apenas o header do ttc
 #include "esp_heap_caps.h"
 #include "sd_logger.h"
 #include "base_comms.h"
@@ -16,7 +16,7 @@ constexpr BaseType_t CORE_CONTROL = 1;
 // Pinagem
 #define LED_BUILTIN 2
 
-//Instanciação do RTC
+// Instanciação do RTC
 RTC_DS3231 rtc;
 
 // I2C - TC, EPS e ADCS
@@ -55,7 +55,7 @@ RTC_DS3231 rtc;
 // Event Group
 EventGroupHandle_t systemEvents;
 
-//Timestamp universal
+// Timestamp universal
 void GetCurrentTimestamp(char* buffer, size_t maxLen) {
     DateTime now = rtc.now();
     snprintf(buffer, maxLen, "%04d-%02d-%02dT%02d:%02d:%02d", 
@@ -64,138 +64,168 @@ void GetCurrentTimestamp(char* buffer, size_t maxLen) {
 }
 
 // TASK - INICIALIZAÇÃO DO EPS
-void TaskEPS(void *parameter) { Serial.println("[BOOT] Inicializando EPS...");
- if (EPSinit()) {
-    Serial.println("[OK] EPS inicializado");
-    xEventGroupSetBits(systemEvents, EPS_READY);} 
-  
-  else {
-    Serial.println("[ERRO] Falha na inicialização do EPS");
-    xEventGroupSetBits(systemEvents, INIT_ERROR);}
-  vTaskDelete(NULL);}
+void TaskEPS(void *parameter) { 
+    Serial.println("[BOOT] Inicializando EPS...");
+    if (EPSinit()) {
+        Serial.println("[OK] EPS inicializado");
+        xEventGroupSetBits(systemEvents, EPS_READY);
+    } else {
+        Serial.println("[ERRO] Falha na inicialização do EPS");
+        xEventGroupSetBits(systemEvents, INIT_ERROR);
+    }
+    vTaskDelete(NULL);
+}
 
 // I2C - TC, EPS e ADCS
 void TaskCommunication(void *parameter) {
-  if (Wire.begin(PIN_SDAitc, PIN_SCLitc, 400000)) {
-    if (rtc.begin()) {
-      if (rtc.lostPower()) {
-        // Se a bateria do RTC descarregou, usa a data/hora da compilação como fallback
-        rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-      }
-      xEventGroupSetBits(systemEvents, I2C_READY | RTC_READY);
+    if (Wire.begin(PIN_SDAitc, PIN_SCLitc, 400000)) {
+        if (rtc.begin()) {
+            if (rtc.lostPower()) {
+                // Se a bateria do RTC descarregou, usa a data/hora da compilação como fallback
+                rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+            }
+            xEventGroupSetBits(systemEvents, I2C_READY | RTC_READY);
+        } else {
+            xEventGroupSetBits(systemEvents, INIT_ERROR);
+        }
     } else {
-      xEventGroupSetBits(systemEvents, INIT_ERROR);
+        xEventGroupSetBits(systemEvents, INIT_ERROR);
     }
-  } else {
-    xEventGroupSetBits(systemEvents, INIT_ERROR);
-  }
-  vTaskDelete(NULL);
+    vTaskDelete(NULL);
 }
 
-// TASK - INICIALIZAÇÃO DAS INTERFACES SPI
+// TASK - INICIALIZAÇÃO DAS INTERFACES SPI E LORA
 void TaskSPI(void *parameter) {
-  Serial.println("[BOOT] Inicializando interfaces SPI...");
-  // VSPI - LoRa SX1276
- SPI.begin(PIN_SCKv, PIN_MISOv, PIN_MOSIv, PIN_CSv);
-  Serial.println("[OK] VSPI (LoRa SX1276) inicializado");
-  xEventGroupSetBits(systemEvents, VSPI_READY);
- vTaskDelete(NULL);}
+    Serial.println("[BOOT] Inicializando interfaces SPI...");
+    SPI.begin(PIN_SCKv, PIN_MISOv, PIN_MOSIv, PIN_CSv);
+    
+    // Inicializa o driver do rádio LoRa TT&C
+    if (TTC_Init()) {
+        Serial.println("[OK] VSPI (LoRa SX1276) inicializado");
+        xEventGroupSetBits(systemEvents, VSPI_READY);
+    } else {
+        Serial.println("[ERRO] Falha ao inicializar o LoRa TT&C");
+        xEventGroupSetBits(systemEvents, INIT_ERROR);
+    }
+    vTaskDelete(NULL);
+}
+
+// TASK OPERACIONAL - PROCESSAMENTO DE COMANDOS DA GROUND STATION
+void TaskTTC(void *parameter) {
+    Serial.println("[TASK] Loop TT&C iniciado.");
+    for (;;) {
+        // Verifica continuamente se chegaram comandos como TC_SET_TIME via LoRa
+        TTC_CheckIncomingCommands();
+        vTaskDelay(pdMS_TO_TICKS(200)); // Intervalo de sondagem do rádio
+    }
+}
 
 // TASK - GERENCIADOR DE BOOT
 void TaskBootManager(void *parameter) {
-  const EventBits_t requiredBits = EPS_READY | I2C_READY | RTC_READY | VSPI_READY;
-  EventBits_t bits = xEventGroupWaitBits(systemEvents, requiredBits | INIT_ERROR, pdFALSE, pdFALSE, portMAX_DELAY);
-  if (bits & INIT_ERROR) {
-    while (1) {
-      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-      vTaskDelay(pdMS_TO_TICKS(500));
+    const EventBits_t requiredBits = EPS_READY | I2C_READY | RTC_READY | VSPI_READY;
+    EventBits_t bits = xEventGroupWaitBits(systemEvents, requiredBits | INIT_ERROR, pdFALSE, pdFALSE, portMAX_DELAY);
+    
+    if (bits & INIT_ERROR) {
+        while (1) {
+            digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
     }
-  }
-  if ((bits & requiredBits) == requiredBits) {
-    Serial.println();
-    Serial.println("   OBC FCP-01");
-    Serial.println("   PRONTO PARA MISSAO");
-    EventBits_t optionalBits = xEventGroupGetBits(systemEvents);
-    if ((optionalBits & SD_READY) == 0) {
-      Serial.println("   AVISO: SD indisponivel");
+    
+    if ((bits & requiredBits) == requiredBits) {
+        Serial.println();
+        Serial.println("   OBC FCP-01");
+        Serial.println("   PRONTO PARA MISSAO");
+        
+        EventBits_t optionalBits = xEventGroupGetBits(systemEvents);
+        if ((optionalBits & SD_READY) == 0) {
+            Serial.println("   AVISO: SD indisponivel");
+        }
+        if ((optionalBits & BASE_READY) == 0) {
+            Serial.println("   AVISO: BASE indisponivel");
+        }
+        
+        xEventGroupSetBits(systemEvents, MISSION_READY);
+
+        // Cria a tarefa de recepção contínua de comandos em tempo de voo (no Core 1)
+        xTaskCreatePinnedToCore(TaskTTC, "TaskTTC", 4096, NULL, 2, NULL, CORE_CONTROL);
     }
-    if ((optionalBits & BASE_READY) == 0) {
-      Serial.println("   AVISO: BASE indisponivel");
-    }
-    xEventGroupSetBits(systemEvents, MISSION_READY);
-  }
-  vTaskDelete(NULL);
+    vTaskDelete(NULL);
 }
 
 void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW); // Led de inicialização do ESP
-  pinMode(PIN_BURN, OUTPUT);
-  digitalWrite(PIN_BURN, LOW); // Gatilho do Burn Wire desligado
-  pinMode(PIN_EN, OUTPUT);
-  digitalWrite(PIN_EN, LOW); // Driver do motor desligado
-  
-  Serial.begin(115200);
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, LOW); // Led de inicialização do ESP
+    pinMode(PIN_BURN, OUTPUT);
+    digitalWrite(PIN_BURN, LOW); // Gatilho do Burn Wire desligado
+    pinMode(PIN_EN, OUTPUT);
+    digitalWrite(PIN_EN, LOW); // Driver do motor desligado
+    
+    Serial.begin(115200);
 
-  // Inicializa o watchdog antes de criar qualquer task supervisionada.
-  esp_task_wdt_init(10, true);
-  esp_task_wdt_add(NULL);
+    // Inicializa o watchdog antes de criar qualquer task supervisionada.
+    esp_task_wdt_init(10, true);
+    esp_task_wdt_add(NULL);
 
-  while (!Serial) {
-    static const unsigned long serialWaitStart = millis();
-    if (millis() - serialWaitStart >= 3000) {
-      break;
+    while (!Serial) {
+        static const unsigned long serialWaitStart = millis();
+        if (millis() - serialWaitStart >= 3000) {
+            break;
+        }
+        delay(100);
+        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
     }
-    delay(100);
-    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-  }
-  digitalWrite(LED_BUILTIN, HIGH);
-  Serial.println("       OBC FCP-01 BOOT");
+    digitalWrite(LED_BUILTIN, HIGH);
+    Serial.println("       OBC FCP-01 BOOT");
 
-  systemEvents = xEventGroupCreate();
-  if (systemEvents == NULL) {
-    Serial.println("[FATAL] Falha ao criar Event Group!");
-    while (true) {
-      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-      delay(200);
+    systemEvents = xEventGroupCreate();
+    if (systemEvents == NULL) {
+        Serial.println("[FATAL] Falha ao criar Event Group!");
+        while (true) {
+            digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+            delay(200);
+        }
     }
-  }
-  Serial.println("[BOOT] Event Group criado");
+    Serial.println("[BOOT] Event Group criado");
 
-//CARTÃO SD
-if (SD_Init())
-    { if (SD_CreateLog())
-        { if (SD_StartTask())
-            { xEventGroupSetBits(systemEvents, HSPI_READY | SD_READY);
-              Serial.println("[OBC] SD pronto.");
-            } else
-            { Serial.println("[OBC] ERRO: SD Task nao iniciou.");
+    // CARTÃO SD
+    if (SD_Init()) {
+        if (SD_CreateLog()) {
+            if (SD_StartTask()) {
+                xEventGroupSetBits(systemEvents, HSPI_READY | SD_READY);
+                Serial.println("[OBC] SD pronto.");
+            } else {
+                Serial.println("[OBC] ERRO: SD Task nao iniciou.");
             }
-        } else
-        { Serial.println("[OBC] ERRO: MISSION.CSV nao foi criado.");
+        } else {
+            Serial.println("[OBC] ERRO: MISSION.CSV nao foi criado.");
         }
-    }else
-    { Serial.println("[OBC] ERRO: SD nao inicializado.");
+    } else {
+        Serial.println("[OBC] ERRO: SD nao inicializado.");
     }
-//BASE/RPI
-if (Base_Init())
-    { if (Base_StartTask())
-        { xEventGroupSetBits(systemEvents, UART_READY | BASE_READY);
-          Serial.println("[OBC] Comunicacao com a base pronta.");
-        } else
-        { Serial.println("[OBC] ERRO: Base Task nao iniciou.");
+
+    // BASE/RPI
+    if (Base_Init()) {
+        if (Base_StartTask()) {
+            xEventGroupSetBits(systemEvents, UART_READY | BASE_READY);
+            Serial.println("[OBC] Comunicacao com a base pronta.");
+        } else {
+            Serial.println("[OBC] ERRO: Base Task nao iniciou.");
         }
-    } else
-    { Serial.println("[OBC] ERRO: UART da base nao inicializada.");
+    } else {
+        Serial.println("[OBC] ERRO: UART da base nao inicializada.");
     }
- 
-  xTaskCreatePinnedToCore(TaskEPS, "TaskEPS", 4096, NULL, 2, NULL, CORE_IO);
-  xTaskCreatePinnedToCore(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL, CORE_IO);
-  xTaskCreatePinnedToCore(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL, CORE_IO);
-  xTaskCreatePinnedToCore(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL, CORE_IO);
-  Serial.println("[BOOT] Tasks de inicialização criadas");
+
+    // Instanciação das tarefas de inicialização
+    xTaskCreatePinnedToCore(TaskEPS, "TaskEPS", 4096, NULL, 2, NULL, CORE_IO);
+    xTaskCreatePinnedToCore(TaskCommunication, "TaskCommunication", 4096, NULL, 2, NULL, CORE_IO);
+    xTaskCreatePinnedToCore(TaskBootManager, "TaskBootManager", 4096, NULL, 3, NULL, CORE_IO);
+    xTaskCreatePinnedToCore(TaskSPI, "TaskSPI", 4096, NULL, 2, NULL, CORE_IO);
+    
+    Serial.println("[BOOT] Tasks de inicialização criadas");
 }
+
 void loop() {
-esp_task_wdt_reset();
-  vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_task_wdt_reset();
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
