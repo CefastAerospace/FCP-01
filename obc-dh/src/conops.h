@@ -1,25 +1,37 @@
 #ifndef CONOPS_H
 #define CONOPS_H
-#include <Arduino.h>
 
-// Mapeamento oficial dos estados do ConOps
+#include <Arduino.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+
+// Estados do Satélite (Máquina de Estados ConOps)
 typedef enum {
-    STATE_BOOT,
-    STATE_INIT,
-    STATE_SAFE,
-    STATE_READY,
-    STATE_MISSION
+    STATE_STARTUP = 0,
+    STATE_BOOT_CHECK,
+    STATE_MISSION,
+    STATE_SAFE
 } SystemState_t;
 
-// Opcodes para controle manual via Ground Station (TT&C)
-#define CMD_ENTER_SAFE  0x10
-#define CMD_EXIT_SAFE   0x11
-#define CMD_SET_MODE    0x12
+// --- Bitmasks para o EventGroup dos Subsistemas ---
+#define SYS_BIT_EPS_READY       (1 << 0)
+#define SYS_BIT_ADCS_READY      (1 << 1)
+#define SYS_BIT_TTC_READY       (1 << 2)
+#define SYS_BIT_SD_READY        (1 << 3)
+#define SYS_BIT_RTC_READY       (1 << 4)
+#define SYS_BIT_INIT_ERROR      (1 << 5)
 
-// Interface pública de gerenciamento de estado
-bool System_InitConOps();
-bool System_SetState(SystemState_t newState);
+// Máscara combinada: Todos os sistemas essenciais para entrar em missão
+#define SYS_BITS_ALL_CRITICAL   (SYS_BIT_EPS_READY | SYS_BIT_ADCS_READY | SYS_BIT_TTC_READY)
+
+// Handle global do EventGroup
+extern EventGroupHandle_t xSystemEventGroup;
+
+// --- Protótipos de Funções do ConOps ---
+void System_Init();
 SystemState_t System_GetState();
-const char* System_GetStateName(SystemState_t st);
+void System_SetState(SystemState_t new_state);
+void System_SetSubsystemReady(EventBits_t bit);
+bool System_WaitAllCriticalReady(TickType_t xTicksToWait);
 
 #endif // CONOPS_H
