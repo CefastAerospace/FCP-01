@@ -140,6 +140,53 @@ void setup() {
 }
 
 void loop() {
-    // O loop fica ocioso, pois a execução é mantida pelas tarefas do FreeRTOS
-    vTaskDelay(pdMS_TO_TICKS(10000));
+    // Leitor de comandos digitáveis via Monitor Serial
+    if (Serial.available() > 0) {
+        char cmd = Serial.read();
+
+        switch (cmd) {
+            case '1':
+                System_SetState(STATE_MISSION);
+                Serial.println("\n[MANUAL] Modo alterado para: STATE_MISSION");
+                break;
+
+            case '2':
+                System_SetState(STATE_SAFE);
+                Serial.println("\n[MANUAL] Modo alterado para: STATE_SAFE");
+                break;
+
+            case '3':
+                System_SetState(STATE_BOOT_CHECK);
+                Serial.println("\n[MANUAL] Modo alterado para: STATE_BOOT_CHECK");
+                break;
+
+            case 'r':
+            case 'R':
+                Serial.println("\n[MANUAL] Reiniciando OBC...");
+                ESP.restart();
+                break;
+
+            case 's':
+            case 'S':
+                Serial.println("\n=== STATUS ATUAL DO SATÉLITE ===");
+                Serial.printf("Estado ConOps: %d\n", System_GetState());
+                Serial.printf("Bateria: %.2f V | Corrente: %.1f mA\n", EPS.GetBatteryVoltage(), 150.0f);
+                break;
+
+            default:
+                // Ignora quebras de linha (\n ou \r)
+                if (cmd != '\r' && cmd != '\n') {
+                    Serial.println("\n[OPÇÕES DIGITÁVEIS VIA SERIAL]");
+                    Serial.println("  1 -> Forçar STATE_MISSION");
+                    Serial.println("  2 -> Forçar STATE_SAFE");
+                    Serial.println("  3 -> Forçar STATE_BOOT_CHECK");
+                    Serial.println("  s -> Imprimir Status da Telemetria");
+                    Serial.println("  r -> Reboot (Reiniciar ESP32)");
+                }
+                break;
+        }
+    }
+
+    // Libera tempo para a CPU não travar a IDLE task do FreeRTOS
+    vTaskDelay(pdMS_TO_TICKS(100));
 }
