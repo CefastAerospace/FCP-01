@@ -140,53 +140,89 @@ void setup() {
 }
 
 void loop() {
-    // Leitor de comandos digitáveis via Monitor Serial
+    // Verifica se há dados disponíveis no buffer do Monitor Serial
     if (Serial.available() > 0) {
-        char cmd = Serial.read();
+        String input = Serial.readStringUntil('\n');
+        input.trim(); // Remove espaços e quebras de linha (\r, \n)
 
-        switch (cmd) {
-            case '1':
-                System_SetState(STATE_MISSION);
-                Serial.println("\n[MANUAL] Modo alterado para: STATE_MISSION");
-                break;
+        if (input.length() == 0) return;
 
-            case '2':
-                System_SetState(STATE_SAFE);
-                Serial.println("\n[MANUAL] Modo alterado para: STATE_SAFE");
-                break;
+        // --- COMANDOS DO MOTOR ADCS ---
+        if (input.startsWith("rpm ") || input.startsWith("RPM ")) {
+            float target_rpm = input.substring(4).toFloat();
 
-            case '3':
-                System_SetState(STATE_BOOT_CHECK);
-                Serial.println("\n[MANUAL] Modo alterado para: STATE_BOOT_CHECK");
-                break;
+            SubsystemCommand_t cmd;
+            cmd.command_id = 0x22; // CMD_ADCS_SET_RPM
+            cmd.payload_len = sizeof(float);
+            memcpy(cmd.payload, &target_rpm, sizeof(float));
 
-            case 'r':
-            case 'R':
-                Serial.println("\n[MANUAL] Reiniciando OBC...");
-                ESP.restart();
-                break;
+            SubsystemStatus_t status = ADCS.HandleCommand(cmd);
 
-            case 's':
-            case 'S':
-                Serial.println("\n=== STATUS ATUAL DO SATÉLITE ===");
-                Serial.printf("Estado ConOps: %d\n", System_GetState());
-                Serial.printf("Bateria: %.2f V | Corrente: %.1f mA\n", EPS.GetBatteryVoltage(), 150.0f);
-                break;
+            if (status == SUBSYS_OK) {
+                Serial.printf("\n[MANUAL] ADCS: Alvo de velocidade atualizado para %.1f RPM\n", target_rpm);
+            } else {
+                Serial.println("\n[MANUAL] Erro ao enviar comando para o ADCS!");
+            }
+        }
+        else if (input.equalsIgnoreCase("stop")) {
+            SubsystemCommand_t cmd;
+            cmd.command_id = 0x21; // CMD_ADCS_STOP
+            cmd.payload_len = 0;
+            ADCS.HandleCommand(cmd);
+            Serial.println("\n[MANUAL] ADCS: Motor parado (IDLE).");
+        }
+        else if (input.equalsIgnoreCase("estop")) {
+            SubsystemCommand_t cmd;
+            cmd.command_id = 0xFF; // Emergency Stop
+            cmd.payload_len = 0;
+            ADCS.HandleCommand(cmd);
+            Serial.println("\n[MANUAL] ADCS: PARADA DE EMERGÊNCIA ACIONADA!");
+        }
 
-            default:
-                // Ignora quebras de linha (\n ou \r)
-                if (cmd != '\r' && cmd != '\n') {
-                    Serial.println("\n[OPÇÕES DIGITÁVEIS VIA SERIAL]");
-                    Serial.println("  1 -> Forçar STATE_MISSION");
-                    Serial.println("  2 -> Forçar STATE_SAFE");
-                    Serial.println("  3 -> Forçar STATE_BOOT_CHECK");
-                    Serial.println("  s -> Imprimir Status da Telemetria");
-                    Serial.println("  r -> Reboot (Reiniciar ESP32)");
-                }
-                break;
+        // --- COMANDOS DA MÁQUINA DE ESTADOS (CONOPS) ---
+        else if (input == "1") {
+            System_SetState(STATE_MISSION);
+            Serial.println("\n[MANUAL] Estado alterado para: STATE_MISSION");
+        }
+        else if (input == "2") {
+            System_SetState(STATE_SAFE);
+            Serial.println("\n[MANUAL] Estado alterado para: STATE_SAFE");
+        }
+        else if (input == "3") {
+            System_SetState(STATE_BOOT_CHECK);
+            Serial.println("\n[MANUAL] Estado alterado para: STATE_BOOT_CHECK");
+        }
+
+        // --- REBOOT E DIAGNÓSTICO DO SISTEMA ---
+        else if (input.equalsIgnoreCase("r")) {
+            Serial.println("\n[MANUAL] Reiniciando OBC (ESP32)...");
+            Serial.flush();
+            ESP.restart();
+        }
+        else if (input.equalsIgnoreCase("s")) {
+            Serial.println("\n=== STATUS ATUAL DO SATÉLITE ===");
+            Serial.printf("Estado ConOps: %d\n", System_GetState());
+            Serial.printf("Bateria: %.2f V | Temperatura OBC: %.1f °C\n", EPS.GetBatteryVoltage(), 24.5f);
+            Serial.printf("ADCS Target RPM: %.1f | Current RPM: %.1f\n", ADCS.GetTargetRPM(), ADCS.GetCurrentRPM());
+        }
+
+        // --- MENU DE AJUDA ---
+        else if (input.equalsIgnoreCase("h") || input.equalsIgnoreCase("help")) {
+            Serial.println("\n=== COMANDOS DISPONÍVEIS VIA SERIAL ===");
+            Serial.println("  1           -> Forçar STATE_MISSION");
+            Serial.println("  2           -> Forçar STATE_SAFE");
+            Serial.println("  3           -> Forçar STATE_BOOT_CHECK");
+            Serial.println("  rpm <valor> -> Define velocidade do motor ADCS (ex: rpm 1500 ou rpm -500)");
+            Serial.println("  stop        -> Para o motor do ADCS");
+            Serial.println("  estop       -> Dispara parada de emergência do ADCS");
+            Serial.println("  s           -> Imprime o status da telemetria e ConOps");
+            Serial.println("  r           -> Reinicia o microcontrolador (Reboot OBC)");
+        }
+        else {
+            Serial.println("\nComando desconhecido. Digite 'help' para listar as opções.");
         }
     }
 
-    // Libera tempo para a CPU não travar a IDLE task do FreeRTOS
-    vTaskDelay(pdMS_TO_TICKS(100));
+    // Delay curto para liberar ciclos de CPU para a IDLE task do FreeRTOS
+    vTaskDelay(pdMS_TO_TICKS(50));
 }
