@@ -51,17 +51,16 @@ bool Payload_HealthCheck(void);
 // --- Funções Específicas de Comunicação UART ---
 
 /**
- * @brief Envia uma string de dados/comando bruta para o Raspberry Pi via UART.
- * @param data Ponteiro para a string a ser enviada.
+ * @brief Envia um pacote de bytes bruto encapsulado para a RPi via UART.
+ * @param data Ponteiro para os dados a serem transmitidos.
+ * @param len Tamanho dos dados em bytes.
  */
-void Payload_SendData(const char* data);
+void Payload_SendData(const uint8_t* data, size_t len);
 
 /**
- * @brief Lê a resposta enviada pelo Raspberry Pi via UART.
- * @param buffer Buffer de memória para armazenar a resposta.
- * @param maxLen Tamanho máximo disponível no buffer.
- * @return true se alguma mensagem foi lida com sucesso, false em caso de timeout/vazio.
+ * @brief Verifica se há comunicação ativa válida no enlace UART.
+ * @return true se a RPi estiver respondendo dentro do tempo limite (heartbeat).
  */
-bool Payload_ReadResponse(char* buffer, size_t maxLen);
+bool Payload_ReadResponse(void);
 
 #endif // PAYLOAD_H
