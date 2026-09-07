@@ -52,7 +52,7 @@ FCP-01/
 │   ├── include/
 │   └── src/
 ├── payload/               # Raspberry Pi Zero W - projeto separado, NÃO é PlatformIO
-│   └── (ex: requirements.txt, main.py)
+│   └── telemetry.py       # Script de telemetria que captura as informações dos aviões próximos
 ├── str/
 │   ├── exports/            # arquivos .STEP
 │   ├── drawings/           # desenhos técnicos em .PDF
