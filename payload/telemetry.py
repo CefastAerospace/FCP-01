@@ -2,6 +2,7 @@ import socket
 import time
 import os
 import json
+from datetime import datetime, timezone
 
 LOG_FILE = '/mnt/data/mission_log.json'
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -10,70 +11,94 @@ aircraft_cache = {}
 
 MISSION_DURATION_SECONDS = 600
 mission_start_time = time.time()
+reported_10min = False
 
-s = socket.socket()
-s.connect(('127.0.0.1', 30003))
+HOST = '127.0.0.1'
+PORT = 30003
 
 print("Iniciando missão ADS-B (10 minutos)...")
 
 while True:
+    s = None
+    stream = None
+
     try:
-        elapsed_time = time.time() - mission_start_time
-        if elapsed_time >= MISSION_DURATION_SECONDS and not reported_10min:
-                    print("\n" + "="*50)
-                    print(f"AVISO: A janela padrão de 10 minutos de missão foi atingida!")
-                    print(f"Total de aeronaves únicas rastreadas: {len(aircraft_cache)}")
-                    print("O sistema continuará rodando em modo de monitoramento contínuo...")
-                    print("="*50 + "\n")
-                    reported_10min = True
+        print(f"\nConectando ao dump1090 em {HOST}:{PORT}...")
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((HOST, PORT))
 
-        line = s.recv(1024).decode(errors='ignore').split('\n')[0]
+        stream = s.makefile('r', encoding='utf-8', errors='ignore')
+        print("Conectado com sucesso. Adquirindo telemetria...")
 
-        if line:
-            parts = line.split(',')
+        while True:
+            elapsed_time = time.time() - mission_start_time
+            if elapsed_time >= MISSION_DURATION_SECONDS and not reported_10min:
+                        print("\n" + "="*50)
+                        print(f"AVISO: A janela padrão de 10 minutos de missão foi atingida!")
+                        print(f"Total de aeronaves únicas rastreadas: {len(aircraft_cache)}")
+                        print("O sistema continuará rodando em modo de monitoramento contínuo...")
+                        print("="*50 + "\n")
+                        reported_10min = True
+                        break
 
-            if len(parts) > 15 and parts[0] == 'MSG':
-                msg_type = parts[1]
-                icao = parts[4]
+            line = stream.readline()
+            if not line:
+                # If readline returns empty, the server closed the connection
+                raise ConnectionError("Stream fechado pelo servidor.")
 
-                if icao not in aircraft_cache:
-                    aircraft_cache[icao] = {
-                        "icao": icao,
-                        "alt": 0,
-                        "vel": 0,
-                        "lat": None,
-                        "lon": None
-                    }
+            line = line.strip()
 
-                updated = False
-                current_timestamp = time.time()
+            if line:
+                parts = line.split(',')
 
-                if msg_type == '3':
-                    if parts[11]:
-                        aircraft_cache[icao]["alt"] = float(parts[11])
-                        updated = True
-                    if parts[14] and parts[15]:
-                        aircraft_cache[icao]["lat"] = float(parts[14])
-                        aircraft_cache[icao]["lon"] = float(parts[15])
-                        updated = True
+                if len(parts) > 15 and parts[0] == 'MSG':
+                    msg_type = parts[1]
+                    icao = parts[4]
 
-                elif msg_type == '4':
-                    if parts[12]:
-                        aircraft_cache[icao]["vel"] = float(parts[12])
-                        updated = True
+                    if icao not in aircraft_cache:
+                        aircraft_cache[icao] = {
+                            "icao": icao,
+                            "alt": 0,
+                            "vel": 0,
+                            "lat": None,
+                            "lon": None,
+                            "timestamp": None
+                        }
 
-                if updated:
-                    aircraft_cache[icao]["timestamp"] = current_timestamp
+                    updated = False
+                    current_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
-                    plane_data = aircraft_cache[icao]
-                    json_record = json.dumps(plane_data, separators=(',',':'))
+                    if msg_type == '3':
+                        if parts[11]:
+                            aircraft_cache[icao]["alt"] = float(parts[11])
+                            updated = True
+                        if parts[14] and parts[15]:
+                            aircraft_cache[icao]["lat"] = float(parts[14])
+                            aircraft_cache[icao]["lon"] = float(parts[15])
+                            updated = True
 
-                    with open(LOG_FILE, 'a') as f:
-                        f.write(json_record + '\n')
+                    elif msg_type == '4':
+                        if parts[12]:
+                            aircraft_cache[icao]["vel"] = float(parts[12])
+                            updated = True
 
-                    print(f"[{int(elapsed_time)}s] Log -> Aeronave {icao} | Alt: {plane_data['alt']}ft | Vel: {plane_data['vel']}kt | Total Rastreadas: {len(aircraft_cache)}")
+                    if updated:
+                        aircraft_cache[icao]["timestamp"] = current_timestamp
+
+                        plane_data = aircraft_cache[icao]
+                        json_record = json.dumps(plane_data, separators=(',',':'))
+
+                        with open(LOG_FILE, 'a') as f:
+                            f.write(json_record + '\n')
+
+                        print(f"[{int(elapsed_time)}s] [{current_timestamp}] Log -> Aeronave {icao} | Alt: {plane_data['alt']}ft | Vel: {plane_data['vel']}kt | Total Rastreadas: {len(aircraft_cache)}")
 
     except Exception as e:
-        print("Error", e)
-
-    time.sleep(1)
+        print(f"Erro de conexão ou socket: {e}. Tentando reconectar em 3 segundos...")
+        if stream:
+            try: stream.close()
+            except: pass
+        if s:
+            try: s.close()
+            except: pass
+        time.sleep(3)
