@@ -23,7 +23,7 @@ while True:
     stream = None
 
     try:
-        print(f"\nConectando ao dump1090 em {HOST}:{PORT}...")
+        print(f"Conectando ao dump1090 em {HOST}:{PORT}...")
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((HOST, PORT))
 
@@ -43,7 +43,6 @@ while True:
 
             line = stream.readline()
             if not line:
-                # If readline returns empty, the server closed the connection
                 raise ConnectionError("Stream fechado pelo servidor.")
 
             line = line.strip()
@@ -60,6 +59,7 @@ while True:
                             "icao": icao,
                             "alt": 0,
                             "vel": 0,
+                            "heading": 0.0,
                             "lat": None,
                             "lon": None,
                             "timestamp": None
@@ -81,17 +81,21 @@ while True:
                         if parts[12]:
                             aircraft_cache[icao]["vel"] = float(parts[12])
                             updated = True
+                        if len(parts) > 13 and parts[13]:
+                            aircraft_cache[icao]["heading"] = float(parts[13])
+                            updated = True
 
                     if updated:
                         aircraft_cache[icao]["timestamp"] = current_timestamp
-
                         plane_data = aircraft_cache[icao]
-                        json_record = json.dumps(plane_data, separators=(',',':'))
 
-                        with open(LOG_FILE, 'a') as f:
-                            f.write(json_record + '\n')
+                        if(plane_data["alt"]) > 0 and plane_data["lat"] is not None and plane_data["lon"] is not None:
+                            json_record = json.dumps(plane_data, separators=(',',':'))
 
-                        print(f"[{int(elapsed_time)}s] [{current_timestamp}] Log -> Aeronave {icao} | Alt: {plane_data['alt']}ft | Vel: {plane_data['vel']}kt | Total Rastreadas: {len(aircraft_cache)}")
+                            with open(LOG_FILE, 'a') as f:
+                                f.write(json_record + '\n')
+
+                            print(f"[{int(elapsed_time)}s] [{current_timestamp}] Log -> Aeronave {icao} | Alt: {plane_data['alt']}ft | Vel: {plane_data['vel']}kt | Total Rastreadas: {len(aircraft_cache)}")
 
     except Exception as e:
         print(f"Erro de conexão ou socket: {e}. Tentando reconectar em 3 segundos...")
