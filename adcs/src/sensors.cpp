@@ -1,5 +1,5 @@
-#include "sensors.h"
-#include "config.h"
+#include "include/sensors.h"
+#include "include/config.h"
 #include <Wire.h>
 #include <MPU9250_WE.h>
 #include <BH1750.h>
@@ -147,3 +147,4 @@ void sensors_printSerial() {
                    sData.bh1750_1_ok ? "OK" : "OFFLINE",
                    sData.bh1750_2_ok ? "OK" : "OFFLINE");
 }
+

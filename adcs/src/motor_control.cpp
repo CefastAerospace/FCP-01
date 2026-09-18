@@ -1,5 +1,5 @@
-#include "motor_control.h"
-#include "config.h"
+#include "include/motor_control.h"
+#include "include/config.h"
 #include <Wire.h>
 #include <SimpleFOC.h>
 
@@ -169,3 +169,4 @@ const char* motor_getModeString() {
         default:                  return "Desconhecido";
     }
 }
+

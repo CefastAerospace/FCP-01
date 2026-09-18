@@ -7,10 +7,10 @@
 // ============================================================================
 
 // --- Pinos do SimpleFOC Mini (DRV8313) ---
-#define PIN_IN1   25    // PWM fase A
+#define PIN_IN1   27    // PWM fase A
 #define PIN_IN2   26    // PWM fase B
-#define PIN_IN3   27    // PWM fase C
-#define PIN_EN    32    // Enable do driver
+#define PIN_IN3   25    // PWM fase C
+#define PIN_EN    33    // Enable do driver
 
 // --- Barramento I2C ---
 #define PIN_SDA   21
@@ -50,10 +50,10 @@
 #define VOLTAGE_SENSOR_ALIGN  3.0f
 
 // --- WiFi ---
-#define WIFI_SSID      "ADCS-CubeSat"
-#define WIFI_PASSWORD   "12345678"
-#define WIFI_AP_SSID   "ADCS-CubeSat"
-#define WIFI_AP_PASS   "12345678"
+#define WIFI_SSID      "Aerospace-Net"
+#define WIFI_PASSWORD   "4V0bOb391@JF"
+#define WIFI_AP_SSID   "Aerospace-Net"
+#define WIFI_AP_PASS   "4V0bOb391@JF"
 #define WIFI_TIMEOUT_MS 15000  // Tempo limite para conectar (ms)
 
 // --- Intervalos de Atualização (ms) ---
@@ -77,3 +77,4 @@
 #define DEBUG_SPIN_DURATION  3000    // Duração do teste de rotação (ms)
 
 #endif // CONFIG_H
+

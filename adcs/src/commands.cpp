@@ -1,8 +1,8 @@
-#include "commands.h"
-#include "config.h"
-#include "sensors.h"
-#include "motor_control.h"
-#include "missions.h"
+#include "include/commands.h"
+#include "include/config.h"
+#include "include/sensors.h"
+#include "include/motor_control.h"
+#include "include/missions.h"
 
 // ============================================================================
 //  Implementação do Módulo de Comandos
@@ -135,3 +135,4 @@ String cmd_getStatusJSON() {
     json += "}";
     return json;
 }
+

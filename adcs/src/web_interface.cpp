@@ -1,9 +1,9 @@
-#include "web_interface.h"
-#include "config.h"
-#include "commands.h"
-#include "sensors.h"
-#include "motor_control.h"
-#include "missions.h"
+#include "include/web_interface.h"
+#include "include/config.h"
+#include "include/commands.h"
+#include "include/sensors.h"
+#include "include/motor_control.h"
+#include "include/missions.h"
 #include <WiFi.h>
 #include <WebServer.h>
 
@@ -251,3 +251,4 @@ void web_init() {
 void web_loop() {
     sv.handleClient();
 }
+
