@@ -1,5 +1,5 @@
-#include "include/motor_control.h"
-#include "include/config.h"
+#include "motor_control.h"
+#include "config.h"
 #include <Wire.h>
 #include <SimpleFOC.h>
 
@@ -89,7 +89,9 @@ void motor_setAngle(float rad) {
 
 void motor_stop() {
     currentTarget = 0.0f;
-    Serial.println("[MOTOR] Parando motor (target = 0).");
+    motor.disable();
+    driverEnabled = false;
+    Serial.println("[MOTOR] Motor parado (driver desabilitado).");
 }
 
 void motor_emergencyStop() {

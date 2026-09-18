@@ -1,7 +1,7 @@
-#include "include/missions.h"
-#include "include/config.h"
-#include "include/sensors.h"
-#include "include/motor_control.h"
+#include "missions.h"
+#include "config.h"
+#include "sensors.h"
+#include "motor_control.h"
 
 // ============================================================================
 //  Implementação do Módulo de Missões

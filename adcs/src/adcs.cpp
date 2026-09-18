@@ -26,12 +26,12 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-#include "include/config.h"
-#include "include/sensors.h"
-#include "include/motor_control.h"
-#include "include/missions.h"
-#include "include/commands.h"
-#include "include/web_interface.h"    // ← TROCAR POR "lora_interface.h" no futuro
+#include "config.h"
+#include "sensors.h"
+#include "motor_control.h"
+#include "missions.h"
+#include "commands.h"
+#include "web_interface.h"    // ← TROCAR POR "lora_interface.h" no futuro
 
 // Timer para telemetria Serial
 static unsigned long lastSerialPrint = 0;
