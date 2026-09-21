@@ -2,8 +2,14 @@
 #define TTC_H
 
 #include <Arduino.h>
-#include "subsystem_interface.h"
-#include "conops.h"
+#include "../../src/subsystem_interface.h"
+#include "../../src/conops.h"
+#include "../../src/drivers/lora_sx1276.h"
+#ifdef TTC_USE_MOCK
+#include "../../src/drivers/lora_mock.h"
+#endif
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 // Status de resposta dos Telecomandos (ACK/NACK)
 typedef enum : uint8_t {
@@ -14,6 +20,16 @@ typedef enum : uint8_t {
     ERR_STATE_REJECTED   = 0x04,
     ERR_UNKNOWN_CMD      = 0xFF
 } CmdStatus_t;
+
+// Comandos internos OBC -> TTC (via SubsystemCommand_t / HandleCommand)
+typedef enum : uint8_t {
+    TTC_CMD_TX_TELEMETRY   = 0x01,  // Transmite um pacote de telemetria agora
+    TTC_CMD_BEACON_ON      = 0x02,  // Habilita beacon periódico
+    TTC_CMD_BEACON_OFF     = 0x03,  // Desabilita beacon
+    TTC_CMD_SET_BEACON_INT = 0x04,  // Define intervalo de beacon (ms, uint32 no payload)
+    TTC_CMD_TX_RAW         = 0x05,  // Transmite payload bruto (bytes no cmd.payload)
+    TTC_CMD_RESET_STATS    = 0x06   // Zera contadores de link
+} TTC_InternalCmd_t;
 
 // Opcodes de Entrada
 typedef enum : uint8_t {
@@ -34,14 +50,6 @@ typedef enum : uint8_t {
 } CommandID_t;
 
 // Estruturas de pacotes originais mantidas
-typedef struct {
-    uint32_t timestamp;
-    float voltage;
-    float current;
-    float temp;
-    uint8_t systemStatus;
-} PacketTelemetry_t;
-
 typedef struct __attribute__((packed)) {
     uint16_t sequence_id;
     uint8_t  command_id;
@@ -59,6 +67,32 @@ typedef struct __attribute__((packed)) {
     uint16_t checksum;
 } ACKPacket_t;
 
+// Pacote de Telemetria (Downlink) — espelha o padrão do ACK com frame + checksum
+#define TM_HEADER        0xAA55
+#define TM_TYPE_TELEMETRY 0x01
+
+typedef struct __attribute__((packed)) {
+    uint16_t header;           // 0xAA55
+    uint16_t sequence_id;      // Contador incremental de pacotes TM
+    uint8_t  packet_type;      // TM_TYPE_TELEMETRY
+    uint8_t  system_status;    // Estado ConOps (SystemState_t)
+    uint32_t timestamp;        // Tempo do OBC (millis)
+    // --- EPS ---
+    float vbat;                // Tensão do barramento (V)
+    float ibat;                // Corrente da bateria (mA)
+    float temp_obc;            // Temperatura OBC (°C)
+    // --- ADCS ---
+    float rpm;                 // Roda de reação atual (RPM)
+    float target_rpm;          // Roda de reação alvo (RPM)
+    // --- Link TT&C ---
+    int16_t  last_rssi;        // RSSI do último pacote RX (dBm)
+    float    last_snr;         // SNR do último pacote RX (dB)
+    uint32_t rx_packets_count; // Pacotes RX válidos
+    uint32_t tx_packets_count; // Pacotes TX enfileirados
+    uint32_t rx_errors_count;  // Erros RX (ex: CRC inválido)
+    uint16_t checksum;         // CRC16 sobre os campos anteriores
+} TelemetryPacket_t;
+
 typedef struct {
     int16_t  last_rssi;
     float    last_snr;
@@ -72,6 +106,15 @@ typedef struct {
 class TTC_Module : public ISubsystem {
 private:
     TTC_Telemetry_t _telemetry;
+    ILoRaRadio* _radio = NULL;
+    QueueHandle_t _txQueue = NULL;
+    uint16_t _sequence_id = 0;
+    int64_t _time_offset_ms = 0;
+    bool     _beacon_enabled = false;
+    uint32_t _beacon_interval_ms = 10000;
+    uint32_t _last_beacon_ms = 0;
+    bool     _burn_active = false;
+    uint32_t _burn_end_ms = 0;
 
 public:
     TTC_Module();
@@ -89,8 +132,15 @@ public:
     void SendACK(uint16_t sequence_id, uint8_t command_id, uint8_t status_code);
     void ProcessPacket(const TelecommandPacket_t &pkt);
     void SendTelemetryPacket();
+    void FlushTxQueue();
+    bool QueueTxPacket(const uint8_t* data, size_t len);
 };
 
 extern TTC_Module TTC;
+
+#ifdef TTC_USE_MOCK
+// Acesso ao mock para autoteste (só existe no env esp32dev-mock)
+LoRaMock* TTC_GetMock();
+#endif
 
 #endif // TTC_H

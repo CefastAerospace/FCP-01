@@ -13,6 +13,15 @@ typedef enum {
     SUBSYS_ERR_UNKNOWN         // Erro desconhecido
 } SubsystemStatus_t;
 
+// Aliases compatíveis (usados pelas libs em common/) — mesmo tipo, nomes alternativos
+#define SUBSYSTEM_OK             SUBSYS_OK
+#define SUBSYSTEM_ERR_INIT_FAILED SUBSYS_ERR_INIT_FAILED
+#define SUBSYSTEM_ERR_COMMS      SUBSYS_ERR_TIMEOUT
+#define SUBSYSTEM_ERR_INVALID_PARAM SUBSYS_ERR_PARAM_INVALID
+#define SUBSYSTEM_ERR_TIMEOUT    SUBSYS_ERR_TIMEOUT
+#define SUBSYSTEM_ERR_NOT_READY  SUBSYS_ERR_NOT_READY
+#define SUBSYSTEM_ERR_HARDWARE_FAULT SUBSYS_ERR_HARDWARE_FAULT
+
 // Estrutura genérica de telecomando enviada aos subsistemas
 typedef struct {
     uint8_t command_id;        // Identificador único do comando

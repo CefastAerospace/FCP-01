@@ -3,7 +3,12 @@
 #include <SPI.h>
 #include "../eps-tc/src/eps.h"
 #include "../tt-c/src/ttc.h"
+#ifdef TTC_USE_MOCK
+#include "../tt-c/src/ttc_selftest.h"
+#endif
+#include "../adcs/adcs.h"
 #include "../common/payload.h" // Inclusão da interface da Payload
+#include "../common/interfaces/subsystem_types.h"
 #include "esp_heap_caps.h"
 #include "sd_logger.h"
 #include "base_comms.h"
@@ -99,9 +104,9 @@ void TaskEPS(void *pvParameters) {
     const TickType_t xFrequency = pdMS_TO_TICKS(500); // 2 Hz
 
     for (;;) {
-        EPS.TaskUpdate();
+        g_eps.TaskUpdate();
 
-        if (!EPS.HealthCheck()) {
+        if (!g_eps.HealthCheck()) {
             Serial.println("[EPS] ALERTA: Tensão baixa ou superaquecimento detectado!");
         }
 
@@ -117,7 +122,7 @@ void TaskConOps(void *pvParameters) {
     const TickType_t xFrequency = pdMS_TO_TICKS(1000); // 1 Hz
 
     for (;;) {
-        if (!EPS.HealthCheck() && System_GetState() == STATE_MISSION) {
+        if (!g_eps.HealthCheck() && System_GetState() == STATE_MISSION) {
             System_SetState(STATE_SAFE);
             Serial.println("[ConOps] Forçando STATE_SAFE devido a falha no EPS!");
         }
@@ -149,7 +154,7 @@ void setup() {
     System_Init();
 
     // 2. Inicializa os subsistemas e seta os bits correspondentes no EventGroup
-    if (EPS.Init() == SUBSYS_OK) {
+    if (g_eps.Init() == SUBSYS_OK) {
         Serial.println("[INIT] EPS OK");
         System_SetSubsystemReady(SYS_BIT_EPS_READY);
     } else {
@@ -279,12 +284,84 @@ void loop() {
 
             Serial.println("\n=== STATUS ATUAL DO SATÉLITE ===");
             Serial.printf("Estado ConOps: %d\n", System_GetState());
-            Serial.printf("Bateria: %.2f V | Temperatura OBC: %.1f °C\n", EPS.GetBatteryVoltage(), 24.5f);
-            Serial.printf("ADCS Target RPM: %.1f | Current RPM: %.1f\n", ADCS.GetTargetRPM(), ADCS.GetCurrentRPM());
+
+            uint8_t eps_buf[64];
+            size_t eps_len = 0;
+            if (g_eps.GetTelemetry(eps_buf, sizeof(eps_buf), &eps_len) == SUBSYS_OK && eps_len >= sizeof(EPS_Telemetry_t)) {
+                EPS_Telemetry_t *eps = (EPS_Telemetry_t*)eps_buf;
+                Serial.printf("Bateria: %.2f V | Corrente: %.1f mA | Temp OBC: %.1f °C\n",
+                              eps->bus_voltage, eps->crnt_mA, eps->temp_C);
+            }
+
+            uint8_t adcs_buf[64];
+            size_t adcs_len = 0;
+            if (ADCS.GetTelemetry(adcs_buf, sizeof(adcs_buf), &adcs_len) == SUBSYS_OK && adcs_len >= sizeof(ADCS_Telemetry_t)) {
+                ADCS_Telemetry_t *adcs = (ADCS_Telemetry_t*)adcs_buf;
+                Serial.printf("ADCS Target RPM: %.1f | Current RPM: %.1f | Modo: %u\n",
+                              adcs->target_rpm, adcs->current_rpm, adcs->mode);
+            }
+
             Serial.printf("Payload RPi Conectada: %s | Pacotes ADS-B: %u | Temp RPi: %.1f °C\n",
                           p_telemetry.is_pi_responsive ? "SIM" : "NAO",
                           p_telemetry.adsb_messages_received,
                           p_telemetry.pi_temperature_c);
+        }
+#ifdef TTC_USE_MOCK
+        else if (input.equalsIgnoreCase("ttc test")) {
+            Serial.println("\n[MANUAL] Iniciando autoteste do TT-C (mock)...");
+            TTC_SelfTest_Run();
+        }
+#endif
+        // --- COMANDOS DE TX DO TT-C (ambos envs: teste de RF sob demanda) ---
+        else if (input.equalsIgnoreCase("ttc tx")) {
+            SubsystemCommand_t cmd;
+            cmd.command_id = TTC_CMD_TX_TELEMETRY;
+            cmd.payload_len = 0;
+            if (TTC.HandleCommand(cmd) == SUBSYS_OK) {
+                Serial.println("\n[MANUAL] TT-C: Telemetria enfileirada para TX.");
+            } else {
+                Serial.println("\n[MANUAL] TT-C: Falha ao enfileirar telemetria!");
+            }
+        }
+        else if (input.equalsIgnoreCase("ttc stats")) {
+            uint8_t tbuf[64];
+            size_t tlen = 0;
+            if (TTC.GetTelemetry(tbuf, sizeof(tbuf), &tlen) == SUBSYS_OK && tlen >= sizeof(TTC_Telemetry_t)) {
+                TTC_Telemetry_t* t = (TTC_Telemetry_t*)tbuf;
+                Serial.printf("\n[MANUAL] TT-C stats: rx=%lu tx=%lu err=%lu rssi=%d snr=%.1f\n",
+                              (unsigned long)t->rx_packets_count, (unsigned long)t->tx_packets_count,
+                              (unsigned long)t->rx_errors_count, t->last_rssi, t->last_snr);
+            } else {
+                Serial.println("\n[MANUAL] TT-C: falha ao ler telemetria!");
+            }
+        }
+        else if (input.equalsIgnoreCase("ttc beacon off")) {
+            SubsystemCommand_t cmd;
+            cmd.command_id = TTC_CMD_BEACON_OFF;
+            cmd.payload_len = 0;
+            TTC.HandleCommand(cmd);
+            Serial.println("\n[MANUAL] TT-C: Beacon desligado.");
+        }
+        else if (input.startsWith("ttc beacon ")) {
+            int seg = input.substring(11).toInt();
+            if (seg < 1) {
+                Serial.println("\n[MANUAL] Uso: ttc beacon <segundos> | ttc beacon off");
+            } else {
+                SubsystemCommand_t cmd;
+                cmd.command_id = TTC_CMD_SET_BEACON_INT;
+                uint32_t ms = (uint32_t)seg * 1000UL;
+                memcpy(cmd.payload, &ms, sizeof(ms));
+                cmd.payload_len = sizeof(ms);
+                SubsystemStatus_t rc = TTC.HandleCommand(cmd);
+                cmd.command_id = TTC_CMD_BEACON_ON;
+                cmd.payload_len = 0;
+                rc = (TTC.HandleCommand(cmd) == SUBSYS_OK) ? rc : SUBSYS_ERR_UNKNOWN;
+                if (rc == SUBSYS_OK) {
+                    Serial.printf("\n[MANUAL] TT-C: Beacon ligado a cada %d s.\n", seg);
+                } else {
+                    Serial.println("\n[MANUAL] TT-C: Falha ao configurar beacon!");
+                }
+            }
         }
 
         // --- MENU DE AJUDA ---
@@ -301,6 +378,13 @@ void loop() {
             Serial.println("  payload reboot -> Executa shutdown/reboot na RPi Zero W");
             Serial.println("  s              -> Imprime o status da telemetria e ConOps");
             Serial.println("  r              -> Reinicia o microcontrolador (Reboot OBC)");
+            Serial.println("  ttc tx         -> Transmite uma telemetria agora (teste de RF)");
+            Serial.println("  ttc stats      -> Mostra contadores RX/TX/erros do TT-C");
+            Serial.println("  ttc beacon <s> -> Liga beacon periódico (ex: ttc beacon 5)");
+            Serial.println("  ttc beacon off -> Desliga o beacon");
+#ifdef TTC_USE_MOCK
+            Serial.println("  ttc test       -> Roda o autoteste do TT-C (só env mock)");
+#endif
         }
         else {
             Serial.println("\nComando desconhecido. Digite 'help' para listar as opções.");

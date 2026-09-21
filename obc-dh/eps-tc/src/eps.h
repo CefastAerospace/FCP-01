@@ -2,7 +2,7 @@
 #define EPS_H
 
 #include <Arduino.h>
-#include "subsystem_interface.h"
+#include "../../src/subsystem_interface.h"
 
 // Estrutura de Telemetria do EPS (packed para garantir alinhamento no envio por rádio)
 typedef struct __attribute__((packed)) {
@@ -32,6 +32,6 @@ public:
     EPS_Telemetry_t ReadData();
 };
 
-extern EPS_Module EPS;
+extern EPS_Module g_eps;
 
 #endif // EPS_H

@@ -3,19 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-
-/**
- * @brief Códigos de status e erros padronizados para todos os subsistemas do CubeSat.
- */
-typedef enum {
-    SUBSYSTEM_OK = 0,               /*!< Operação realizada com sucesso */
-    SUBSYSTEM_ERR_INIT_FAILED,      /*!< Falha na inicialização do hardware/periférico */
-    SUBSYSTEM_ERR_COMMS,            /*!< Falha de comunicação no barramento (I2C, SPI, UART) */
-    SUBSYSTEM_ERR_INVALID_PARAM,    /*!< Parâmetro ou comando inválido recebido */
-    SUBSYSTEM_ERR_TIMEOUT,          /*!< Tempo limite de resposta excedido */
-    SUBSYSTEM_ERR_NOT_READY,        /*!< Subsistema ainda não inicializado ou ocupado */
-    SUBSYSTEM_ERR_HARDWARE_FAULT    /*!< Falha física ou leitura fora da faixa operacional */
-} SubsystemStatus_t;
+#include "../../src/subsystem_interface.h"
 
 /**
  * @brief Identificadores dos subsistemas do FCP-01.

@@ -2,7 +2,7 @@
 #define ADCS_H
 
 #include <Arduino.h>
-#include "subsystem_interface.h"
+#include "../../src/subsystem_interface.h"
 
 // Modos de operação do ADCS
 typedef enum : uint8_t {

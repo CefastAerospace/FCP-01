@@ -1,5 +1,6 @@
 #include "base_comms.h"
 #include <HardwareSerial.h>
+#include "esp_task_wdt.h"
 
 static constexpr BaseType_t CORE_IO = 0;
 

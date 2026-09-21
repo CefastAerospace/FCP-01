@@ -1,7 +1,7 @@
 #include "eps.h"
 
 // Instância global do módulo EPS
-EPS_Module EPS;
+EPS_Module g_eps;
 
 EPS_Module::EPS_Module() {
     _telemetry.bus_voltage = 0.0f;
@@ -48,7 +48,7 @@ SubsystemStatus_t EPS_Module::HandleCommand(const SubsystemCommand_t &cmd) {
             return SUBSYS_OK;
 
         default:
-            return SUBSYS_ERR_CMD_UNKNOWN;
+            return SUBSYS_ERR_PARAM_INVALID;
     }
 }
 

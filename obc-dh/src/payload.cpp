@@ -1,5 +1,5 @@
-#include "payload.h"
-#include "../../common/interfaces/payload_protocol.h"
+#include "../common/payload.h"
+#include "../common/interfaces/payload_protocol.h"
 #include "sd_logger.h"
 
 // Instância global de telemetria interna do subsistema
@@ -136,12 +136,12 @@ bool Payload_HealthCheck(void) {
     return g_payload_telemetry.is_pi_responsive;
 }
 
-void Payload_SendData(const char* data) {
-    if (data != NULL) {
-        Payload_HandleCommand(PAYLOAD_CMD_START_ACQ, (const uint8_t*)data, strlen(data));
+void Payload_SendData(const uint8_t* data, size_t len) {
+    if (data != NULL && len > 0) {
+        Payload_HandleCommand(PAYLOAD_CMD_START_ACQ, data, len);
     }
 }
 
-bool Payload_ReadResponse(char* buffer, size_t maxLen) {
+bool Payload_ReadResponse(void) {
     return g_payload_telemetry.is_pi_responsive;
 }

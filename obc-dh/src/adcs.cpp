@@ -1,4 +1,4 @@
-#include "adcs.h"
+#include "../adcs/adcs.h"
 
 // Instância global do módulo ADCS
 ADCS_Module ADCS;
@@ -92,7 +92,7 @@ SubsystemStatus_t ADCS_Module::HandleCommand(const SubsystemCommand_t &cmd) {
             return SUBSYS_OK;
 
         default:
-            return SUBSYS_ERR_CMD_UNKNOWN;
+            return SUBSYS_ERR_PARAM_INVALID;
     }
 }
 

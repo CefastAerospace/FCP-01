@@ -20,6 +20,7 @@ typedef enum {
 #define SYS_BIT_SD_READY        (1 << 3)
 #define SYS_BIT_RTC_READY       (1 << 4)
 #define SYS_BIT_INIT_ERROR      (1 << 5)
+#define SYS_BIT_PAYLOAD_READY   (1 << 6)
 
 // Máscara combinada: Todos os sistemas essenciais para entrar em missão
 #define SYS_BITS_ALL_CRITICAL   (SYS_BIT_EPS_READY | SYS_BIT_ADCS_READY | SYS_BIT_TTC_READY)
